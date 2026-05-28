@@ -47,15 +47,26 @@
             </div>
             <div class="config-form">
                 <div class="input-group">
-                    <label for="mac-input">Dirección MAC del ESP32 (12 caracteres hex):</label>
+                    <label for="mac-input">Dirección MAC del ESP32 (Formato libre: con o sin dos puntos):</label>
                     <div class="input-with-btn">
-                        <input type="text" id="mac-input" placeholder="Ej: 240AC408E9D4" value="240AC408E9D4">
+                        <input type="text" id="mac-input" placeholder="Ej: 24:0A:C4:08:E9:D4 o 240AC408E9D4" value="240AC408E9D4">
                         <button id="connect-btn" class="btn btn-primary"><i class="fa-solid fa-plug"></i> Conectar</button>
                     </div>
                 </div>
                 <div class="topics-info">
                     <span><strong>Broker:</strong> broker.hivemq.com (Port 8000/WebSockets)</span>
                     <span><strong>Base Topic:</strong> <code id="base-topic-display">esp32/robot_fuzzy/240AC408E9D4/...</code></span>
+                </div>
+            </div>
+            
+            <!-- Dynamic Auto-Discovery Section -->
+            <div id="discovery-section" style="display: none; margin-top: 15px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.08);">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="fa-solid fa-satellite-dish" style="color: var(--color-green); animation: pulseIcon 2s infinite ease-in-out;"></i>
+                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">ESP32 Activos Detectados en el Broker:</span>
+                </div>
+                <div id="detected-list" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <!-- Dynamically populated buttons go here -->
                 </div>
             </div>
         </section>
@@ -239,7 +250,8 @@
                     <div class="card-header">
                         <i class="fa-solid fa-brain"></i>
                         <h2>Inspector de Lógica Difusa</h2>
-                                     <div class="fuzzy-inspector-body">
+                    </div>
+                    <div class="fuzzy-inspector-body">
                         <!-- Traction Fuzzy Inspector -->
                         <div class="wheel-fuzzy-panel">
                             <h3>⚙️ Tracción (PI Velocidad)</h3>
@@ -285,7 +297,8 @@
                                 </div>
                             </div>
                         </div>
-                    </div>        </div>
+                        </div>
+                    </div>
                     <div class="fuzzy-inspector-footer">
                         <span><strong>Inferencia:</strong> Mamdani Min-Max</span>
                         <span><strong>Defuzzificación:</strong> Media Ponderada de Singletons</span>

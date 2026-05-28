@@ -7,6 +7,10 @@ let commandTopic = "";
 let lastPingTime = null;
 let pingInterval = null;
 
+// Auto-Discovery variables
+let discoveryClient = null;
+const discoveredDevices = new Map(); // MAC -> { ip, lastSeen, element }
+
 // Chart
 const maxDataPoints = 40;
 let telemetryChart = null;
@@ -213,8 +217,12 @@ function drawCar() {
 
 // --- MQTT ---
 function connectMQTT() {
-    macAddress = document.getElementById('mac-input').value.trim().toUpperCase();
-    if (macAddress.length !== 12) { alert("La MAC debe tener 12 caracteres hexadecimales."); return; }
+    // Clean and normalize MAC address (strip colons, dashes, spaces and uppercase it)
+    macAddress = document.getElementById('mac-input').value.replace(/[^a-fA-F0-9]/g, '').trim().toUpperCase();
+    if (macAddress.length !== 12) { 
+        alert("La MAC debe tener 12 caracteres hexadecimales (ej: 24:0A:C4:08:E9:D4 o 240AC408E9D4)."); 
+        return; 
+    }
 
     const btn = document.getElementById('connect-btn');
     btn.disabled = true;
@@ -224,6 +232,9 @@ function connectMQTT() {
     telemetryTopic = base + "/telemetry";
     commandTopic   = base + "/command";
     document.getElementById('base-topic-display').innerText = base + "/...";
+
+    // Reset ping time on new connection to avoid immediate offline bug
+    lastPingTime = null;
 
     const useSSL = window.location.protocol === "https:";
     const port   = useSSL ? 8884 : 8000;
@@ -239,7 +250,7 @@ function onConnectSuccess() {
     isConnected = true;
     const badge = document.getElementById('conn-badge');
     badge.className = "badge badge-connected";
-    document.getElementById('conn-text').innerText = "CONECTADO AL BROKER";
+    document.getElementById('conn-text').innerText = "ESPERANDO ESP32...";
     const btn = document.getElementById('connect-btn');
     btn.disabled = false; btn.className = "btn btn-danger";
     btn.innerHTML = '<i class="fa-solid fa-unplug"></i> Desconectar';
@@ -350,10 +361,133 @@ function throttledDrive(speed, angle) {
     }, 50);
 }
 
+// --- Auto-Discovery Client ---
+function initDiscovery() {
+    const useSSL = window.location.protocol === "https:";
+    const port   = useSSL ? 8884 : 8000;
+    const randId = "WebDiscover_" + Math.random().toString(16).substr(2, 8);
+
+    discoveryClient = new Paho.MQTT.Client("broker.hivemq.com", port, randId);
+    discoveryClient.onConnectionLost = (res) => {
+        console.log("Discovery connection lost, retrying...", res);
+        setTimeout(initDiscovery, 5000);
+    };
+    discoveryClient.onMessageArrived = (message) => {
+        if (message.destinationName === "esp32/robot_fuzzy/discovery") {
+            try {
+                const d = JSON.parse(message.payloadString);
+                if (d.mac) {
+                    addDiscoveredDevice(d.mac, d.ip, d.status);
+                }
+            } catch (e) { console.error("Discovery parsing error:", e); }
+        }
+    };
+    discoveryClient.connect({
+        useSSL,
+        timeout: 5,
+        onSuccess: () => {
+            console.log("Discovery connected. Listening for ESP32 pings...");
+            discoveryClient.subscribe("esp32/robot_fuzzy/discovery");
+        },
+        onFailure: (err) => {
+            console.error("Discovery connection failed, retrying...", err);
+            setTimeout(initDiscovery, 5000);
+        }
+    });
+}
+
+function addDiscoveredDevice(mac, ip, status) {
+    const listContainer = document.getElementById('detected-list');
+    const section = document.getElementById('discovery-section');
+    if (!listContainer || !section) return;
+
+    const cleanMac = mac.replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+    if (cleanMac.length !== 12) return;
+
+    const now = new Date();
+    const formattedMac = cleanMac.match(/.{1,2}/g).join(':');
+
+    if (discoveredDevices.has(cleanMac)) {
+        const dev = discoveredDevices.get(cleanMac);
+        dev.lastSeen = now;
+        dev.ip = ip;
+        const btn = document.getElementById(`btn-dev-${cleanMac}`);
+        if (btn) {
+            btn.innerHTML = `<i class="fa-solid fa-microchip"></i> ${formattedMac} <span style="font-size: 0.75rem; opacity: 0.75; font-weight: 400; padding: 2px 6px; background: rgba(255,255,255,0.08); border-radius: 4px; margin-left: 5px;">IP: ${ip || 'S/IP'}</span>`;
+        }
+    } else {
+        section.style.display = 'block';
+
+        const btn = document.createElement('button');
+        btn.id = `btn-dev-${cleanMac}`;
+        btn.className = 'btn';
+        btn.style.background = 'rgba(16, 185, 129, 0.1)';
+        btn.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+        btn.style.color = 'var(--color-green)';
+        btn.style.padding = '6px 12px';
+        btn.style.fontSize = '0.8rem';
+        btn.style.borderRadius = '6px';
+        btn.style.cursor = 'pointer';
+        btn.style.display = 'inline-flex';
+        btn.style.alignItems = 'center';
+        btn.style.gap = '6px';
+        btn.style.transition = 'all 0.2s';
+        btn.innerHTML = `<i class="fa-solid fa-microchip" style="animation: pulseIcon 1.5s infinite ease-in-out;"></i> ${formattedMac} <span style="font-size: 0.75rem; opacity: 0.75; font-weight: 400; padding: 2px 6px; background: rgba(255,255,255,0.08); border-radius: 4px; margin-left: 5px;">IP: ${ip || 'S/IP'}</span>`;
+
+        btn.addEventListener('mouseover', () => {
+            btn.style.background = 'rgba(16, 185, 129, 0.2)';
+            btn.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+            btn.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+        });
+        btn.addEventListener('mouseout', () => {
+            btn.style.background = 'rgba(16, 185, 129, 0.1)';
+            btn.style.boxShadow = 'none';
+            btn.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        });
+
+        btn.addEventListener('click', () => {
+            document.getElementById('mac-input').value = formattedMac;
+            // Highlight feedback
+            const macInput = document.getElementById('mac-input');
+            macInput.style.borderColor = 'var(--color-green)';
+            setTimeout(() => { macInput.style.borderColor = ''; }, 1000);
+            
+            // Auto connect
+            if (isConnected) {
+                disconnectMQTT();
+                setTimeout(connectMQTT, 250);
+            } else {
+                connectMQTT();
+            }
+        });
+
+        listContainer.appendChild(btn);
+        discoveredDevices.set(cleanMac, { ip, lastSeen: now, element: btn });
+    }
+}
+
 // --- DOM Events ---
 document.addEventListener("DOMContentLoaded", () => {
     initChart();
     setupCanvas();
+
+    // Start auto-discovery background client
+    initDiscovery();
+
+    // Setup periodic cleanup for discovered devices (every 5 seconds)
+    setInterval(() => {
+        const now = new Date();
+        discoveredDevices.forEach((dev, mac) => {
+            if ((now - dev.lastSeen) / 1000 > 30) {
+                dev.element.remove();
+                discoveredDevices.delete(mac);
+            }
+        });
+        const section = document.getElementById('discovery-section');
+        if (section && discoveredDevices.size === 0) {
+            section.style.display = 'none';
+        }
+    }, 5000);
 
     document.getElementById('connect-btn').addEventListener('click', () => {
         isConnected ? disconnectMQTT() : connectMQTT();

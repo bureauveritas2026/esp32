@@ -55,7 +55,7 @@ unsigned long lastTelemetryTime = 0;
 const unsigned long CONTROL_MS = 50; // 20 Hz
 
 // --- MQTT Topics ---
-String clientId, topicTelemetry, topicCommand, topicConfig;
+String clientId, topicTelemetry, topicCommand, topicConfig, macStr;
 
 // ---- ISRs ----
 void IRAM_ATTR isrTrac() {
@@ -176,13 +176,27 @@ void setup() {
     uint8_t mac[6]; WiFi.macAddress(mac);
     char ms[13];
     snprintf(ms, sizeof(ms), "%02X%02X%02X%02X%02X%02X", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
-    clientId      = "ESP32Ack_" + String(ms);
-    topicTelemetry = String(MQTT_BASE_TOPIC) + ms + "/telemetry";
-    topicCommand   = String(MQTT_BASE_TOPIC) + ms + "/command";
-    topicConfig    = String(MQTT_BASE_TOPIC) + ms + "/config";
+    macStr        = String(ms);
+    clientId      = "ESP32Ack_" + macStr;
+    topicTelemetry = String(MQTT_BASE_TOPIC) + macStr + "/telemetry";
+    topicCommand   = String(MQTT_BASE_TOPIC) + macStr + "/command";
+    topicConfig    = String(MQTT_BASE_TOPIC) + macStr + "/config";
 
-    Serial.println("=== Ackermann Robot ===");
-    Serial.println("Topic: " + topicTelemetry);
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.println("===       Inicializando Robot Ackermann        ===");
+    Serial.print("ESP32 MAC (con dos puntos): ");
+    Serial.println(WiFi.macAddress());
+    Serial.print("ESP32 MAC (formato plano):  ");
+    Serial.println(macStr);
+    Serial.print("MQTT Broker:                ");
+    Serial.println(MQTT_BROKER);
+    Serial.print("Telemetry Topic:            ");
+    Serial.println(topicTelemetry);
+    Serial.print("Command Topic:              ");
+    Serial.println(topicCommand);
+    Serial.println("==================================================");
+    Serial.println();
 
     setupWiFi();
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
@@ -265,5 +279,14 @@ void loop() {
             fuzzySteer.lastState.mu_de[0], fuzzySteer.lastState.mu_de[1],fuzzySteer.lastState.mu_de[2]
         );
         mqttClient.publish(topicTelemetry.c_str(), buf);
+    }
+
+    // --- Broadcast a Discovery ping every 10 seconds ---
+    static unsigned long lastDiscoveryTime = 0;
+    if (now - lastDiscoveryTime >= 10000 && mqttClient.connected()) {
+        lastDiscoveryTime = now;
+        char discBuf[128];
+        snprintf(discBuf, sizeof(discBuf), "{\"mac\":\"%s\",\"status\":\"online\",\"ip\":\"%s\"}", macStr.c_str(), WiFi.localIP().toString().c_str());
+        mqttClient.publish("esp32/robot_fuzzy/discovery", discBuf);
     }
 }

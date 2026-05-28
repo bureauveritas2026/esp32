@@ -4,7 +4,7 @@
 // --- WiFi Configuration ---
 // Replace with your local WiFi credentials
 #define WIFI_SSID       "Bengy"
-#define WIFI_PASSWORD   "gallito2813"
+#define WIFI_PASSWORD   "gallito2813*"
 
 // --- MQTT Broker Configuration ---
 // We use a public, free HiveMQ broker. It requires no authentication.
