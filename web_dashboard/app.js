@@ -66,17 +66,35 @@ function setupCanvas() {
     window.addEventListener('resize', resize);
     resize();
 
-    // Click on canvas → set autopilot waypoint
+    // Click on canvas → set target coordinates (local frame relative to car)
     canvas.addEventListener('click', (e) => {
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        
         autopilotTargetX = x;
         autopilotTargetY = y;
         autopilotWaypointSet = true;
-        document.getElementById('auto-target-x').value = Math.round(x);
-        document.getElementById('auto-target-y').value = Math.round(y);
-        drawCar(); // immediately show waypoint marker
+        
+        // Calculate coordinates in meters relative to the car's current pose
+        const dx = x - carX;
+        const dy = y - carY;
+        // y points forward (along theta), x points rightward (perpendicular)
+        const x_local_m = (-dx * Math.sin(carTheta) + dy * Math.cos(carTheta)) / 200.0;
+        const y_local_m = (dx * Math.cos(carTheta) + dy * Math.sin(carTheta)) / 200.0;
+        
+        document.getElementById('goto-x').value = x_local_m.toFixed(2);
+        document.getElementById('goto-y').value = y_local_m.toFixed(2);
+        
+        // Automatically switch mode to coordinates in the selector
+        const modeSelect = document.getElementById('goto-mode');
+        const groupManual = document.getElementById('group-goto-manual');
+        const groupCoords = document.getElementById('group-goto-coords');
+        modeSelect.value = 'coords';
+        groupManual.style.display = 'none';
+        groupCoords.style.display = 'grid';
+        
+        drawCar(); // show waypoint marker
     });
 }
 
@@ -425,8 +443,10 @@ function onMessageArrived(message) {
         // --- 2D Ackermann Simulator ---
         updateCarKinematics(d.trac.pos, d.steer.pos);
 
-        // --- Autopilot closed-loop supervisor ---
-        if (autopilotActive) updateAutopilotSupervisor();
+        // --- Precision Arrival (ESP32-Side) Feedback ---
+        if (d.arrival) {
+            updateArrivalFeedback(d.arrival);
+        }
 
     } catch(e) { console.error("Telemetry parse error:", e, message.payloadString); }
 }
@@ -519,111 +539,51 @@ function addDiscoveredDevice(mac, ip) {
 }
 
 // ============================================================
-// AUTOPILOT 2D
+// PRECISION ARRIVAL FEEDBACK (ESP32-SIDE)
 // ============================================================
-function startAutopilot() {
-    if (!isConnected) { alert("Conéctate primero al ESP32."); return; }
+function updateArrivalFeedback(arrival) {
+    const txtState = document.getElementById('txt-goto-state');
+    const txtTarget = document.getElementById('txt-goto-target');
+    const txtErr = document.getElementById('txt-goto-err-dist');
+    const btnSend = document.getElementById('btn-send-goto');
+    const btnAbort = document.getElementById('btn-abort-goto');
 
-    autopilotTargetX = parseFloat(document.getElementById('auto-target-x').value) || 300;
-    autopilotTargetY = parseFloat(document.getElementById('auto-target-y').value) || 100;
-    autopilotWaypointSet = true;
+    if (arrival.active) {
+        btnSend.style.display = 'none';
+        btnAbort.style.display = 'inline-flex';
+        
+        let targetText = "";
+        const mode = document.getElementById('goto-mode').value;
+        if (mode === 'coords') {
+            const x = document.getElementById('goto-x').value;
+            const y = document.getElementById('goto-y').value;
+            targetText = `Punto (${x}m, ${y}m) → Calc: ${arrival.target_dist.toFixed(1)}cm @ ${arrival.target_angle.toFixed(1)}°`;
+        } else {
+            targetText = `${arrival.target_dist.toFixed(1)} cm a ${arrival.target_angle.toFixed(1)}°`;
+        }
+        txtTarget.innerText = targetText;
 
-    // Capture current car position as start
-    autopilotStartX = carX;
-    autopilotStartY = carY;
-    autopilotActive = true;
-
-    // UI
-    document.getElementById('start-auto-btn').style.display = 'none';
-    document.getElementById('stop-auto-btn').style.display  = 'inline-flex';
-    document.getElementById('auto-feedback-container').style.display = 'block';
-    const totalDist = Math.hypot(autopilotTargetX - autopilotStartX, autopilotTargetY - autopilotStartY);
-    document.getElementById('auto-target-dist').innerText = Math.round(totalDist);
-    document.getElementById('auto-status-text').innerText = "Calculando ruta...";
-    document.getElementById('auto-status-text').style.color = "var(--color-blue)";
-    document.getElementById('auto-progress-bar').style.background = "var(--color-blue)";
-
-    drawCar(); // show waypoint
-}
-
-function stopAutopilot(reached = false) {
-    autopilotActive = false;
-    document.getElementById('start-auto-btn').style.display = 'inline-flex';
-    document.getElementById('stop-auto-btn').style.display  = 'none';
-
-    if (reached) {
-        document.getElementById('auto-status-text').innerText = "¡Objetivo alcanzado! ✓";
-        document.getElementById('auto-status-text').style.color = "var(--color-green)";
-        document.getElementById('auto-progress-bar').style.background = "var(--color-green)";
-        document.getElementById('auto-progress-bar').style.width = "100%";
-        document.getElementById('auto-pct-text').innerText = "100%";
+        if (arrival.phase === 1) {
+            txtState.innerText = "FASE 1: ORIENTANDO DIRECCIÓN";
+            txtState.style.color = "var(--color-orange)";
+            txtErr.innerText = "Esperando alineación...";
+            txtErr.style.color = "var(--color-orange)";
+        } else if (arrival.phase === 2) {
+            txtState.innerText = "FASE 2: TRASLACIÓN DE PRECISIÓN";
+            txtState.style.color = "var(--color-blue)";
+            txtErr.innerText = `${arrival.remaining_dist.toFixed(1)} cm restantes`;
+            txtErr.style.color = "var(--color-blue)";
+        }
     } else {
-        document.getElementById('auto-feedback-container').style.display = 'none';
+        btnSend.style.display = 'inline-flex';
+        btnAbort.style.display = 'none';
+        
+        txtState.innerText = "INACTIVO / EN DESTINO";
+        txtState.style.color = "var(--text-secondary)";
+        txtTarget.innerText = "--";
+        txtErr.innerText = "--";
+        txtErr.style.color = "var(--text-secondary)";
     }
-    publishCommand({ cmd: "stop" });
-    document.getElementById('slider-speed').value = 0;
-    document.getElementById('val-target-speed').innerText = 0;
-    drawCar();
-}
-
-function updateAutopilotSupervisor() {
-    if (!autopilotActive || !lastTelemetryData) return;
-
-    // Vector from car to target (in canvas px)
-    const dx   = autopilotTargetX - carX;
-    const dy   = autopilotTargetY - carY;
-    const dist = Math.hypot(dx, dy);
-
-    // Progress
-    const totalDist   = Math.hypot(autopilotTargetX - autopilotStartX, autopilotTargetY - autopilotStartY);
-    const traveled    = Math.max(0, totalDist - dist);
-    const pct         = Math.min(99, Math.round((traveled / (totalDist || 1)) * 100));
-    document.getElementById('auto-pct-text').innerText    = pct + "%";
-    document.getElementById('auto-progress-bar').style.width = pct + "%";
-    document.getElementById('auto-curr-dist').innerText   = Math.round(traveled);
-    document.getElementById('auto-error-ticks').innerText = Math.round(dist);
-
-    // Reached threshold: 25px
-    if (dist < 25) {
-        stopAutopilot(true);
-        return;
-    }
-
-    // Desired heading toward waypoint
-    const desiredTheta = Math.atan2(dy, dx);
-
-    // Heading error (shortest arc)
-    let headingErr = desiredTheta - carTheta;
-    while (headingErr >  Math.PI) headingErr -= 2 * Math.PI;
-    while (headingErr < -Math.PI) headingErr += 2 * Math.PI;
-
-    // Fuzzy-like proportional steering command (scale heading error → ticks)
-    // headingErr in [-π, π] → steering in [-200, 200] ticks
-    const steerCmd = Math.max(-200, Math.min(200, Math.round(headingErr * (200 / Math.PI))));
-
-    // Fuzzy-like proportional traction command
-    // Slow down as we approach; full speed > 150px away
-    let speedCmd = dist * 0.6;
-    speedCmd = Math.max(50, Math.min(220, speedCmd));
-
-    // Show phase in UI
-    if (dist < 80) {
-        document.getElementById('auto-status-text').innerText = "Desacelerando...";
-        document.getElementById('auto-status-text').style.color = "var(--color-orange)";
-        document.getElementById('auto-progress-bar').style.background = "var(--color-orange)";
-    } else {
-        document.getElementById('auto-status-text').innerText = "Navegando...";
-        document.getElementById('auto-status-text').style.color = "var(--color-blue)";
-        document.getElementById('auto-progress-bar').style.background = "var(--color-blue)";
-    }
-
-    // Also update sliders to reflect autopilot commands
-    document.getElementById('slider-speed').value = Math.round(speedCmd);
-    document.getElementById('val-target-speed').innerText = Math.round(speedCmd);
-    document.getElementById('slider-angle').value = steerCmd;
-    document.getElementById('val-target-angle').innerText = steerCmd;
-
-    publishCommand({ cmd: "drive", speed: parseFloat(speedCmd.toFixed(1)), angle: steerCmd });
 }
 
 // ============================================================
@@ -663,63 +623,111 @@ document.addEventListener("DOMContentLoaded", () => {
     slSpeed.addEventListener('input', e => {
         lbSpeed.innerText = e.target.value;
         const continuous = document.getElementById('continuous-send');
-        if ((!continuous || continuous.checked) && !autopilotActive) {
+        if (!continuous || continuous.checked) {
             throttledDrive(slSpeed.value, slAngle.value);
         }
     });
     slAngle.addEventListener('input', e => {
         lbAngle.innerText = e.target.value;
         const continuous = document.getElementById('continuous-send');
-        if ((!continuous || continuous.checked) && !autopilotActive) {
+        if (!continuous || continuous.checked) {
             throttledDrive(slSpeed.value, slAngle.value);
         }
     });
 
     // Manual send buttons
     document.getElementById('send-speed-btn').addEventListener('click', () => {
-        if (!autopilotActive) publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
+        publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
     });
     document.getElementById('send-angle-btn').addEventListener('click', () => {
-        if (!autopilotActive) publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
+        publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
     });
 
-    // Autopilot
-    document.getElementById('start-auto-btn').addEventListener('click', startAutopilot);
-    document.getElementById('stop-auto-btn').addEventListener('click', () => stopAutopilot(false));
-
-    // Canvas: sync inputs when user types coords manually
-    document.getElementById('auto-target-x').addEventListener('change', () => {
-        autopilotTargetX = parseFloat(document.getElementById('auto-target-x').value) || 300;
-        autopilotWaypointSet = true; drawCar();
+    // Precision positioning Mode Switcher
+    const modeSelect = document.getElementById('goto-mode');
+    const groupManual = document.getElementById('group-goto-manual');
+    const groupCoords = document.getElementById('group-goto-coords');
+    
+    modeSelect.addEventListener('change', () => {
+        if (modeSelect.value === 'coords') {
+            groupManual.style.display = 'none';
+            groupCoords.style.display = 'grid';
+        } else {
+            groupManual.style.display = 'grid';
+            groupCoords.style.display = 'none';
+        }
     });
-    document.getElementById('auto-target-y').addEventListener('change', () => {
-        autopilotTargetY = parseFloat(document.getElementById('auto-target-y').value) || 100;
-        autopilotWaypointSet = true; drawCar();
+
+    // Send Goto Positioning Command
+    document.getElementById('btn-send-goto').addEventListener('click', () => {
+        if (!isConnected) { alert("Conéctate primero al ESP32."); return; }
+        
+        const mode = modeSelect.value;
+        if (mode === 'coords') {
+            const x = parseFloat(document.getElementById('goto-x').value) || 0.0;
+            const y = parseFloat(document.getElementById('goto-y').value) || 0.0;
+            publishCommand({ cmd: "goto_pt", x: x, y: y });
+            
+            // For the 2D simulator visualization
+            // Convert clicked relative coordinates back to global canvas space
+            // Scale: 1m = 200px
+            const dx = -x * 200.0 * Math.sin(carTheta) + y * 200.0 * Math.cos(carTheta);
+            const dy = x * 200.0 * Math.cos(carTheta) + y * 200.0 * Math.sin(carTheta);
+            
+            autopilotTargetX = carX + dx;
+            autopilotTargetY = carY + dy;
+            autopilotWaypointSet = true;
+            drawCar();
+        } else {
+            const dist = parseFloat(document.getElementById('goto-dist').value) || 0.0;
+            const angle = parseFloat(document.getElementById('goto-angle').value) || 0.0;
+            publishCommand({ cmd: "goto", dist: dist, angle: angle });
+            
+            // For the 2D simulator visualization
+            // In manual mode, we just show a straight line representation
+            const ticksPerCm = 25.0;
+            const pxDist = (dist * ticksPerCm) * 0.08;
+            const radAngle = (angle / STEER_MAX_TICKS) * STEER_MAX_RAD;
+            const totalTheta = carTheta + radAngle;
+            
+            autopilotTargetX = carX + pxDist * Math.cos(totalTheta);
+            autopilotTargetY = carY + pxDist * Math.sin(totalTheta);
+            autopilotWaypointSet = true;
+            drawCar();
+        }
+    });
+
+    // Abort Precision Control
+    document.getElementById('btn-abort-goto').addEventListener('click', () => {
+        publishCommand({ cmd: "stop" });
+        autopilotWaypointSet = false;
+        drawCar();
     });
 
     // Preset buttons
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            if (autopilotActive) stopAutopilot(false);
             const s = btn.getAttribute('data-speed');
             const a = btn.getAttribute('data-angle');
             slSpeed.value = s; slAngle.value = a;
             lbSpeed.innerText = s; lbAngle.innerText = a;
             publishCommand({ cmd: "drive", speed: parseFloat(s), angle: parseFloat(a) });
+            autopilotWaypointSet = false;
+            drawCar();
         });
     });
 
     // Emergency stop
     document.getElementById('btn-estop').addEventListener('click', () => {
-        if (autopilotActive) stopAutopilot(false);
         slSpeed.value = 0; slAngle.value = 0;
         lbSpeed.innerText = 0; lbAngle.innerText = 0;
         publishCommand({ cmd: "stop" });
+        autopilotWaypointSet = false;
+        drawCar();
     });
 
     // Reset encoders
     document.getElementById('btn-reset').addEventListener('click', () => {
-        if (autopilotActive) stopAutopilot(false);
         publishCommand({ cmd: "reset" });
         prevTracPos = 0; resetCarPose();
     });

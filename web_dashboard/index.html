@@ -127,52 +127,81 @@
                     </div>
                     
                     <div class="control-presets">
-                        <button class="btn btn-secondary preset-btn" data-speed="150" data-angle="0">Adelante Rápido</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="0">Adelante Lento</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="0" data-angle="0">Detener / Centrar</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-100">Curva Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="150" data-angle="0"><i class="fa-solid fa-angles-up"></i> Adelante Rápido</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="0"><i class="fa-solid fa-angle-up"></i> Adelante Lento</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="0" data-angle="0"><i class="fa-solid fa-circle-stop"></i> Detener / Centrar</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="0"><i class="fa-solid fa-angle-down"></i> Atrás Lento</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-150" data-angle="0"><i class="fa-solid fa-angles-down"></i> Atrás Rápido</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-100"><i class="fa-solid fa-arrow-turn-up fa-rotate-270"></i> Curva Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="100"><i class="fa-solid fa-arrow-turn-up fa-rotate-90"></i> Curva Derecha</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="-100"><i class="fa-solid fa-arrow-turn-down fa-rotate-90"></i> Atrás + Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="100"><i class="fa-solid fa-arrow-turn-down fa-rotate-270"></i> Atrás + Derecha</button>
                     </div>
                 </section>
 
-                <!-- AUTOPILOT / PRECISION POSITIONING -->
+                <!-- PRECISION POSITIONING (ESP32-SIDE) -->
                 <section class="card autopilot-card">
                     <div class="card-header">
                         <i class="fa-solid fa-location-crosshairs" style="color: var(--color-green);"></i>
-                        <h2>Piloto Automático 2D (Posicionamiento)</h2>
+                        <h2>Control de Posicionamiento de Alta Precisión</h2>
                     </div>
                     <div class="autopilot-body" style="display: flex; flex-direction: column; gap: 12px;">
                         <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                            Establece una coordenada de destino (X, Y) o <strong>haz clic directamente en el mapa</strong> de arriba. El piloto automático navegará de forma fluida coordinando velocidad y timón.
+                            El control de lazo cerrado se ejecuta en tiempo real en el ESP32 en dos fases continuas: primero orienta las ruedas de dirección y luego avanza a velocidad controlada hasta detenerse exactamente en el punto.
+                        </div>
+
+                        <!-- Mode Selector -->
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Modo de Posicionamiento:</label>
+                            <select id="goto-mode" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                                <option value="manual">📏 Distancia (cm) y Ángulo (grados)</option>
+                                <option value="coords">📍 Coordenadas Cartesianas X, Y (metros)</option>
+                            </select>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <!-- Inputs: Manual Mode (Distance & Angle) -->
+                        <div id="group-goto-manual" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div style="display: flex; flex-direction: column; gap: 4px;">
-                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Destino X (px):</label>
-                                <input type="number" id="auto-target-x" value="300" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Distancia (cm):</label>
+                                <input type="number" id="goto-dist" value="10" step="1" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 4px;">
-                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Destino Y (px):</label>
-                                <input type="number" id="auto-target-y" value="100" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Ángulo de Giro (°):</label>
+                                <input type="number" id="goto-angle" value="0" min="-360" max="360" step="5" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
                             </div>
                         </div>
 
+                        <!-- Inputs: Coordinates Mode -->
+                        <div id="group-goto-coords" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; display: none;">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Coordenada X (m):</label>
+                                <input type="number" id="goto-x" value="0.0" step="0.05" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Coordenada Y (m):</label>
+                                <input type="number" id="goto-y" value="0.1" step="0.05" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px;">
-                            <button id="start-auto-btn" class="btn btn-success" style="flex-grow: 1; padding: 9px 16px;"><i class="fa-solid fa-play"></i> Iniciar Autopiloto</button>
-                            <button id="stop-auto-btn" class="btn btn-danger" style="flex-grow: 1; padding: 9px 16px; display: none;"><i class="fa-solid fa-circle-stop"></i> Abortar</button>
+                            <button id="btn-send-goto" class="btn btn-success" style="flex-grow: 1; padding: 9px 16px;"><i class="fa-solid fa-play"></i> Enviar Posicionamiento</button>
+                            <button id="btn-abort-goto" class="btn btn-danger" style="flex-grow: 1; padding: 9px 16px; display: none;"><i class="fa-solid fa-circle-stop"></i> Abortar Control</button>
                         </div>
 
-                        <!-- Progress Bar & Feedback -->
-                        <div id="auto-feedback-container" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px;">
-                                <span id="auto-status-text" style="color: var(--color-green);">Buscando objetivo...</span>
-                                <span id="auto-pct-text" style="color: var(--text-secondary);">0%</span>
+                        <!-- Feedback Panel -->
+                        <div id="goto-feedback-panel" style="padding: 10px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 4px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                <span style="color: var(--text-secondary);">Estado de Llegada:</span>
+                                <strong id="txt-goto-state" style="color: var(--text-secondary);">INACTIVO</strong>
                             </div>
-                            <div class="bar-bg" style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
-                                <div id="auto-progress-bar" style="width: 0%; height: 100%; background: var(--color-green); transition: width 0.3s ease;"></div>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                <span style="color: var(--text-secondary);">Objetivo Configurado:</span>
+                                <strong id="txt-goto-target" style="color: white;">--</strong>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
-                                <span>Distancia: <strong id="auto-curr-dist">0</strong> / <strong id="auto-target-dist">500</strong> px</span>
-                                <span>Error: <strong id="auto-error-ticks" class="text-orange">0</strong> px</span>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                <span style="color: var(--text-secondary);">Distancia Restante:</span>
+                                <strong id="txt-goto-err-dist" style="color: var(--color-orange);">--</strong>
                             </div>
                         </div>
                     </div>

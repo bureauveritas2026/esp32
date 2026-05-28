@@ -1,8 +1,11 @@
 #include "FuzzyController.h"
 
-FuzzyController::FuzzyController(float ge, float gde, float gu, bool integrate) {
+FuzzyController::FuzzyController(float ge, float gde, float gu, bool integrate,
+                                 float minP, float deadZoneThresh) {
     Ge = ge; Gde = gde; Gu = gu;
     useIntegration = integrate;
+    minPwm = minP;
+    deadZoneThreshold = deadZoneThresh;
     prev_error = 0.0f;
     integrated_output = 0.0f;
     memset(&lastState, 0, sizeof(FuzzyState));
@@ -23,7 +26,9 @@ float FuzzyController::trapmf(float x, float a, float b, float c, float d) {
 
 float FuzzyController::compute(float target, float current, float dt) {
     float error   = target - current;
-    float d_error = error - prev_error;
+
+    // Normalize derivative by dt so behavior is independent of loop frequency
+    float d_error = (dt > 0.001f) ? (error - prev_error) / dt : 0.0f;
 
     float en  = constrain(error   * Ge,  -1.0f, 1.0f);
     float den = constrain(d_error * Gde, -1.0f, 1.0f);
@@ -64,15 +69,26 @@ float FuzzyController::compute(float target, float current, float dt) {
     float delta_u = (sum_fs > 0.0f) ? sum_wo / sum_fs : 0.0f;
     float delta_pwm = delta_u * Gu;
 
-    float output;
-    if(useIntegration) {
-        // PI mode: integrate the correction (for speed/traction)
-        integrated_output = constrain(integrated_output + delta_pwm, -255.0f, 255.0f);
-        output = integrated_output;
-    } else {
-        // PD mode: direct proportional output (for position/steering)
-        output = constrain(delta_pwm, -255.0f, 255.0f);
+    // Both PI (traction) and PD (steering) use integration/accumulation
+    // PI accumulates velocity corrections over time
+    // PD accumulates position corrections — keeps driving motor until target reached
+    integrated_output = constrain(integrated_output + delta_pwm, -255.0f, 255.0f);
+    float output = integrated_output;
+
+    // Dead-zone compensation: if there is significant error but PWM is below
+    // the motor's static friction threshold, force the minimum PWM needed to move
+    if (fabsf(error) > deadZoneThreshold && fabsf(output) > 0.0f && fabsf(output) < minPwm) {
+        output = (output > 0.0f) ? minPwm : -minPwm;
     }
+
+    // When error is very small (target reached), allow output to settle to zero
+    // This prevents the integrator from "holding" a residual PWM on the steering motor
+    if (!useIntegration && fabsf(error) <= deadZoneThreshold && fabsf(d_error) < deadZoneThreshold) {
+        integrated_output *= 0.85f; // Exponential decay toward zero
+        output = integrated_output;
+    }
+
+    output = constrain(output, -255.0f, 255.0f);
 
     lastState.error      = error;
     lastState.d_error    = d_error;
@@ -94,4 +110,9 @@ void FuzzyController::reset() {
 
 void FuzzyController::setGains(float ge, float gde, float gu) {
     Ge = ge; Gde = gde; Gu = gu;
+}
+
+void FuzzyController::setDeadZone(float minP, float thresh) {
+    minPwm = minP;
+    deadZoneThreshold = thresh;
 }
