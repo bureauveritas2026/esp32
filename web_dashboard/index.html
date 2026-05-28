@@ -85,27 +85,27 @@
                     <div class="control-sliders">
                         <div class="slider-box">
                             <div class="slider-header">
-                                <span>Velocidad Objetivo Izquierda (ticks/s)</span>
-                                <span id="val-target-left" class="slider-val">0</span>
+                                <span><i class="fa-solid fa-gauge-high"></i> Velocidad de Tracción (ticks/s)</span>
+                                <span id="val-target-speed" class="slider-val">0</span>
                             </div>
-                            <input type="range" id="slider-left" min="-300" max="300" value="0" step="10">
+                            <input type="range" id="slider-speed" min="-300" max="300" value="0" step="10">
                         </div>
 
                         <div class="slider-box">
                             <div class="slider-header">
-                                <span>Velocidad Objetivo Derecha (ticks/s)</span>
-                                <span id="val-target-right" class="slider-val">0</span>
+                                <span><i class="fa-solid fa-steering-wheel"></i> Ángulo de Dirección (ticks)</span>
+                                <span id="val-target-angle" class="slider-val">0</span>
                             </div>
-                            <input type="range" id="slider-right" min="-300" max="300" value="0" step="10">
+                            <input type="range" id="slider-angle" min="-200" max="200" value="0" step="5">
                         </div>
                     </div>
                     
                     <div class="control-presets">
-                        <button class="btn btn-secondary preset-btn" data-left="150" data-right="150">Avanzar Rápido</button>
-                        <button class="btn btn-secondary preset-btn" data-left="80" data-right="80">Avanzar Lento</button>
-                        <button class="btn btn-secondary preset-btn" data-left="0" data-right="0">Detener Suave</button>
-                        <button class="btn btn-secondary preset-btn" data-left="-100" data-right="100">Giro Izquierda</button>
-                        <button class="btn btn-secondary preset-btn" data-left="100" data-right="-100">Giro Derecha</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="150" data-angle="0">Adelante Rápido</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="0">Adelante Lento</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="0" data-angle="0">Detener / Centrar</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-100">Curva Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="100">Curva Derecha</button>
                     </div>
                 </section>
 
@@ -116,19 +116,26 @@
                         <h2>Sintonía de Ganancias Difusas</h2>
                     </div>
                     <div class="tuning-form">
+                        <div style="margin-bottom:8px;display:flex;gap:8px;">
+                            <label style="font-size:0.8rem;color:var(--text-secondary);margin:auto 0;">Motor:</label>
+                            <select id="tune-motor" style="flex-grow:1;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);color:white;padding:6px;border-radius:6px;font-family:var(--font-primary);">
+                                <option value="trac">🔧 Tracción (PI - Velocidad)</option>
+                                <option value="steer">🔄 Dirección (PD - Ángulo)</option>
+                            </select>
+                        </div>
                         <div class="tuning-inputs">
                             <div class="tuning-input-group">
-                                <label for="gain-ge">Ganancia de Error (Ge)</label>
+                                <label for="gain-ge">Ge — Error</label>
                                 <input type="number" id="gain-ge" step="0.001" min="0.001" max="1.0" value="0.040">
                                 <span class="help-text">Normaliza el error</span>
                             </div>
                             <div class="tuning-input-group">
-                                <label for="gain-gde">Ganancia Derivada (Gde)</label>
+                                <label for="gain-gde">Gde — Derivada</label>
                                 <input type="number" id="gain-gde" step="0.001" min="0.001" max="1.0" value="0.080">
                                 <span class="help-text">Normaliza el cambio</span>
                             </div>
                             <div class="tuning-input-group">
-                                <label for="gain-gu">Ganancia de Salida (Gu)</label>
+                                <label for="gain-gu">Gu — Salida</label>
                                 <input type="number" id="gain-gu" step="0.5" min="0.5" max="50.0" value="8.0">
                                 <span class="help-text">Escala la corrección PWM</span>
                             </div>
@@ -144,52 +151,52 @@
                         <h2>Telemetría Numérica</h2>
                     </div>
                     <div class="telemetry-tables">
-                        <!-- Left Wheel -->
+                        <!-- Traction Motor -->
                         <div class="wheel-panel">
-                            <h3>Motor Izquierdo (A)</h3>
+                            <h3>⚙️ Motor Tracción (Trasero)</h3>
                             <div class="metric-row">
                                 <span class="metric-name">Objetivo:</span>
-                                <span id="num-target-left" class="metric-val text-blue">0.0</span>
+                                <span id="num-target-speed" class="metric-val text-blue">0.0</span>
                                 <span class="metric-unit">ticks/s</span>
                             </div>
                             <div class="metric-row">
                                 <span class="metric-name">Medido:</span>
-                                <span id="num-speed-left" class="metric-val text-green">0.0</span>
+                                <span id="num-speed-trac" class="metric-val text-green">0.0</span>
                                 <span class="metric-unit">ticks/s</span>
                             </div>
                             <div class="metric-row">
-                                <span class="metric-name">PWM de Salida:</span>
-                                <span id="num-pwm-left" class="metric-val text-orange">0</span>
+                                <span class="metric-name">PWM Salida:</span>
+                                <span id="num-pwm-trac" class="metric-val text-orange">0</span>
                                 <span class="metric-unit">/255</span>
                             </div>
                             <div class="metric-row">
-                                <span class="metric-name">Posición (Ticks):</span>
-                                <span id="num-pos-left" class="metric-val">0</span>
+                                <span class="metric-name">Posición Ticks:</span>
+                                <span id="num-pos-trac" class="metric-val">0</span>
                                 <span class="metric-unit">ticks</span>
                             </div>
                         </div>
                         
-                        <!-- Right Wheel -->
+                        <!-- Steering Motor -->
                         <div class="wheel-panel">
-                            <h3>Motor Derecho (B)</h3>
+                            <h3>🔄 Motor Dirección (Delantero)</h3>
                             <div class="metric-row">
-                                <span class="metric-name">Objetivo:</span>
-                                <span id="num-target-right" class="metric-val text-blue">0.0</span>
-                                <span class="metric-unit">ticks/s</span>
+                                <span class="metric-name">Ángulo Objetivo:</span>
+                                <span id="num-target-angle" class="metric-val text-blue">0</span>
+                                <span class="metric-unit">ticks</span>
                             </div>
                             <div class="metric-row">
-                                <span class="metric-name">Medido:</span>
-                                <span id="num-speed-right" class="metric-val text-green">0.0</span>
-                                <span class="metric-unit">ticks/s</span>
+                                <span class="metric-name">Ángulo Actual:</span>
+                                <span id="num-pos-steer" class="metric-val text-green">0</span>
+                                <span class="metric-unit">ticks</span>
                             </div>
                             <div class="metric-row">
-                                <span class="metric-name">PWM de Salida:</span>
-                                <span id="num-pwm-right" class="metric-val text-orange">0</span>
+                                <span class="metric-name">PWM Salida:</span>
+                                <span id="num-pwm-steer" class="metric-val text-orange">0</span>
                                 <span class="metric-unit">/255</span>
                             </div>
                             <div class="metric-row">
-                                <span class="metric-name">Posición (Ticks):</span>
-                                <span id="num-pos-right" class="metric-val">0</span>
+                                <span class="metric-name">Error:</span>
+                                <span id="num-err-steer" class="metric-val">0</span>
                                 <span class="metric-unit">ticks</span>
                             </div>
                         </div>
@@ -232,52 +239,53 @@
                     <div class="card-header">
                         <i class="fa-solid fa-brain"></i>
                         <h2>Inspector de Lógica Difusa</h2>
-                    </div>
-                    <div class="fuzzy-inspector-body">
+                                     <div class="fuzzy-inspector-body">
+                        <!-- Traction Fuzzy Inspector -->
                         <div class="wheel-fuzzy-panel">
-                            <h3>Motor Izquierdo</h3>
+                            <h3>⚙️ Tracción (PI Velocidad)</h3>
                             <div class="fuzzy-variable">
-                                <strong>Error Normalizado (e<sub>N</sub>): <span id="val-fuzzy-err-left">0.00</span></strong>
+                                <strong>Error e<sub>N</sub>: <span id="val-fuzzy-err-trac">0.00</span></strong>
                                 <div class="fuzzy-bar-group">
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NB</span><div class="bar-bg"><div id="bar-le-0" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-le-0" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NS</span><div class="bar-bg"><div id="bar-le-1" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-le-1" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-le-2" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-le-2" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PS</span><div class="bar-bg"><div id="bar-le-3" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-le-3" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PB</span><div class="bar-bg"><div id="bar-le-4" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-le-4" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NB</span><div class="bar-bg"><div id="bar-te-0" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-te-0" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NS</span><div class="bar-bg"><div id="bar-te-1" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-te-1" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-te-2" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-te-2" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PS</span><div class="bar-bg"><div id="bar-te-3" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-te-3" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PB</span><div class="bar-bg"><div id="bar-te-4" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-te-4" class="val-pct">0%</span></div>
                                 </div>
                             </div>
                             <div class="fuzzy-variable">
-                                <strong>Cambio de Error (de<sub>N</sub>): <span id="val-fuzzy-derr-left">0.00</span></strong>
+                                <strong>Cambio de<sub>N</sub>: <span id="val-fuzzy-derr-trac">0.00</span></strong>
                                 <div class="fuzzy-bar-group">
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">N</span><div class="bar-bg"><div id="bar-lde-0" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-lde-0" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-lde-1" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-lde-1" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">P</span><div class="bar-bg"><div id="bar-lde-2" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-lde-2" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">N</span><div class="bar-bg"><div id="bar-tde-0" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-tde-0" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-tde-1" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-tde-1" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">P</span><div class="bar-bg"><div id="bar-tde-2" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-tde-2" class="val-pct">0%</span></div>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- Steering Fuzzy Inspector -->
                         <div class="wheel-fuzzy-panel">
-                            <h3>Motor Derecho</h3>
+                            <h3>🔄 Dirección (PD Ángulo)</h3>
                             <div class="fuzzy-variable">
-                                <strong>Error Normalizado (e<sub>N</sub>): <span id="val-fuzzy-err-right">0.00</span></strong>
+                                <strong>Error e<sub>N</sub>: <span id="val-fuzzy-err-steer">0.00</span></strong>
                                 <div class="fuzzy-bar-group">
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NB</span><div class="bar-bg"><div id="bar-re-0" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-re-0" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NS</span><div class="bar-bg"><div id="bar-re-1" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-re-1" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-re-2" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-re-2" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PS</span><div class="bar-bg"><div id="bar-re-3" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-re-3" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PB</span><div class="bar-bg"><div id="bar-re-4" class="bar-fill blue-fill" style="width: 0%"></div></div><span id="txt-re-4" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NB</span><div class="bar-bg"><div id="bar-se-0" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-se-0" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">NS</span><div class="bar-bg"><div id="bar-se-1" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-se-1" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-se-2" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-se-2" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PS</span><div class="bar-bg"><div id="bar-se-3" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-se-3" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">PB</span><div class="bar-bg"><div id="bar-se-4" class="bar-fill blue-fill" style="width:0%"></div></div><span id="txt-se-4" class="val-pct">0%</span></div>
                                 </div>
                             </div>
                             <div class="fuzzy-variable">
-                                <strong>Cambio de Error (de<sub>N</sub>): <span id="val-fuzzy-derr-right">0.00</span></strong>
+                                <strong>Cambio de<sub>N</sub>: <span id="val-fuzzy-derr-steer">0.00</span></strong>
                                 <div class="fuzzy-bar-group">
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">N</span><div class="bar-bg"><div id="bar-rde-0" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-rde-0" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-rde-1" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-rde-1" class="val-pct">0%</span></div>
-                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">P</span><div class="bar-bg"><div id="bar-rde-2" class="bar-fill orange-fill" style="width: 0%"></div></div><span id="txt-rde-2" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">N</span><div class="bar-bg"><div id="bar-sde-0" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-sde-0" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">ZE</span><div class="bar-bg"><div id="bar-sde-1" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-sde-1" class="val-pct">0%</span></div>
+                                    <div class="fuzzy-bar-row"><span class="fuzzy-lbl">P</span><div class="bar-bg"><div id="bar-sde-2" class="bar-fill orange-fill" style="width:0%"></div></div><span id="txt-sde-2" class="val-pct">0%</span></div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div>        </div>
                     <div class="fuzzy-inspector-footer">
                         <span><strong>Inferencia:</strong> Mamdani Min-Max</span>
                         <span><strong>Defuzzificación:</strong> Media Ponderada de Singletons</span>
