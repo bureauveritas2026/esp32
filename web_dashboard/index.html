@@ -93,6 +93,15 @@
                         </button>
                     </div>
 
+                    <!-- Continuous Send Master Switch -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 10px 8px 10px; border-bottom: 1px dashed rgba(255,255,255,0.08);">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);"><i class="fa-solid fa-bolt" style="color: var(--color-orange); margin-right: 5px;"></i> Transmisión Continua (Tiempo Real)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="continuous-send" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
                     <div class="control-sliders">
                         <div class="slider-box">
                             <div class="slider-header">
@@ -100,6 +109,9 @@
                                 <span id="val-target-speed" class="slider-val">0</span>
                             </div>
                             <input type="range" id="slider-speed" min="-300" max="300" value="0" step="10">
+                            <div class="action-row" style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                                <button id="send-speed-btn" class="btn btn-xs btn-primary"><i class="fa-solid fa-paper-plane"></i> Enviar Velocidad</button>
+                            </div>
                         </div>
 
                         <div class="slider-box">
@@ -108,6 +120,9 @@
                                 <span id="val-target-angle" class="slider-val">0</span>
                             </div>
                             <input type="range" id="slider-angle" min="-200" max="200" value="0" step="5">
+                            <div class="action-row" style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                                <button id="send-angle-btn" class="btn btn-xs btn-primary"><i class="fa-solid fa-paper-plane"></i> Enviar Dirección</button>
+                            </div>
                         </div>
                     </div>
                     
@@ -116,7 +131,43 @@
                         <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="0">Adelante Lento</button>
                         <button class="btn btn-secondary preset-btn" data-speed="0" data-angle="0">Detener / Centrar</button>
                         <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-100">Curva Izquierda</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="100">Curva Derecha</button>
+                    </div>
+                </section>
+
+                <!-- AUTOPILOT / PRECISION POSITIONING -->
+                <section class="card autopilot-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-location-crosshairs" style="color: var(--color-green);"></i>
+                        <h2>Piloto Automático (Posicionamiento)</h2>
+                    </div>
+                    <div class="autopilot-body" style="display: flex; flex-direction: column; gap: 12px;">
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            Define una distancia objetivo (ticks del encoder) y el asistente difuso guiará al robot de forma fluida hasta frenar en el punto exacto.
+                        </div>
+                        
+                        <div style="display: flex; gap: 12px; align-items: flex-end;">
+                            <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Distancia Objetivo (ticks):</label>
+                                <input type="number" id="auto-target-pos" value="500" step="50" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); padding: 8px; border-radius: 6px; color: white; font-family: var(--font-primary); width: 100%;">
+                            </div>
+                            <button id="start-auto-btn" class="btn btn-success" style="padding: 9px 16px;"><i class="fa-solid fa-play"></i> Iniciar</button>
+                            <button id="stop-auto-btn" class="btn btn-danger" style="padding: 9px 16px; display: none;"><i class="fa-solid fa-circle-stop"></i> Abortar</button>
+                        </div>
+
+                        <!-- Progress Bar & Feedback -->
+                        <div id="auto-feedback-container" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px;">
+                                <span id="auto-status-text" style="color: var(--color-green);">Buscando objetivo...</span>
+                                <span id="auto-pct-text" style="color: var(--text-secondary);">0%</span>
+                            </div>
+                            <div class="bar-bg" style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                                <div id="auto-progress-bar" style="width: 0%; height: 100%; background: var(--color-green); transition: width 0.3s ease;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
+                                <span>Distancia: <strong id="auto-curr-dist">0</strong> / <strong id="auto-target-dist">500</strong></span>
+                                <span>Error: <strong id="auto-error-ticks" class="text-orange">0</strong> ticks</span>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -242,6 +293,17 @@
                     </div>
                     <div class="chart-container">
                         <canvas id="telemetry-chart"></canvas>
+                    </div>
+                </section>
+
+                <!-- FUZZY ERROR & STABILITY PLOT -->
+                <section class="card chart-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-chart-line" style="color: var(--color-orange);"></i>
+                        <h2>Gráfico de Error y Estabilidad Difusa</h2>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="error-chart"></canvas>
                     </div>
                 </section>
 

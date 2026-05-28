@@ -6,10 +6,18 @@ let telemetryTopic = "";
 let commandTopic = "";
 let lastPingTime = null;
 let pingInterval = null;
+let lastTelemetryData = null; // Save last telemetry data
 
 // Auto-Discovery variables
 let discoveryClient = null;
 const discoveredDevices = new Map(); // MAC -> { ip, lastSeen, element }
+
+// Autopilot & Error Chart State
+let errorChart = null;
+let autopilotActive = false;
+let autopilotStartPos = 0;
+let autopilotTargetPos = 0;
+let autopilotDirection = 1;
 
 // Chart
 const maxDataPoints = 40;
@@ -63,10 +71,33 @@ function initChart() {
             animation: { duration: 0 }
         }
     });
+
+    const errorCtx = document.getElementById('error-chart').getContext('2d');
+    errorChart = new Chart(errorCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Error Tracción', data: [], borderColor: '#f97316', borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0 },
+                { label: 'Error Dirección', data: [], borderColor: '#8b5cf6', borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 8, font: { size: 10 } } } },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Error de Control', font: { size: 9 } } }
+            },
+            animation: { duration: 0 }
+        }
+    });
 }
 
-function updateChart(targetSpeed, actualSpeed, targetAngle, actualAngle) {
+function updateChart(targetSpeed, actualSpeed, targetAngle, actualAngle, tracError, steerError) {
     const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    
+    // Telemetry Chart
     telemetryChart.data.labels.push(t);
     telemetryChart.data.datasets[0].data.push(targetSpeed);
     telemetryChart.data.datasets[1].data.push(actualSpeed);
@@ -77,6 +108,16 @@ function updateChart(targetSpeed, actualSpeed, targetAngle, actualAngle) {
         telemetryChart.data.datasets.forEach(d => d.data.shift());
     }
     telemetryChart.update();
+
+    // Error Chart
+    errorChart.data.labels.push(t);
+    errorChart.data.datasets[0].data.push(tracError);
+    errorChart.data.datasets[1].data.push(steerError);
+    if (errorChart.data.labels.length > maxDataPoints) {
+        errorChart.data.labels.shift();
+        errorChart.data.datasets.forEach(d => d.data.shift());
+    }
+    errorChart.update();
 }
 
 // --- Ackermann Canvas Simulator ---
@@ -291,12 +332,19 @@ function publishCommand(obj) {
 function onMessageArrived(message) {
     try {
         const d = JSON.parse(message.payloadString);
+        lastTelemetryData = d; // Save last telemetry data
+        
         lastPingTime = new Date();
         document.getElementById('last-ping').innerText = lastPingTime.toLocaleTimeString();
 
         if (d.connected) {
             document.getElementById('conn-badge').className = "badge badge-connected";
             document.getElementById('conn-text').innerText = "ESP32 ONLINE";
+        }
+
+        // Autopilot Precision Positioning Closed Loop Supervisor
+        if (autopilotActive) {
+            updateAutopilotSupervisor(d.trac.pos);
         }
 
         // Traction telemetry
@@ -312,8 +360,8 @@ function onMessageArrived(message) {
         document.getElementById('num-pwm-steer').innerText    = Math.round(d.steer.pwm);
         document.getElementById('num-err-steer').innerText    = Math.round(d.steer.err);
 
-        // Chart update
-        updateChart(d.trac.target, measuredSpeed, d.steer.target, d.steer.pos);
+        // Chart update with Fuzzy convergence errors
+        updateChart(d.trac.target, measuredSpeed, d.steer.target, d.steer.pos, d.trac.err, d.steer.err);
 
         // Fuzzy bars — Traction
         document.getElementById('val-fuzzy-err-trac').innerText  = d.trac.err.toFixed(2);
@@ -466,10 +514,117 @@ function addDiscoveredDevice(mac, ip, status) {
     }
 }
 
+// --- Autopilot closed-loop supervisor ---
+function startAutopilot() {
+    if (!isConnected) { alert("Conéctate primero al ESP32."); return; }
+    
+    const targetVal = parseInt(document.getElementById('auto-target-pos').value);
+    if (isNaN(targetVal)) return;
+
+    const currentPos = lastTelemetryData ? lastTelemetryData.trac.pos : 0;
+    
+    autopilotStartPos = currentPos;
+    autopilotTargetPos = currentPos + targetVal; // relative positioning
+    autopilotDirection = targetVal >= 0 ? 1 : -1;
+    autopilotActive = true;
+
+    // UI Updates
+    document.getElementById('start-auto-btn').style.display = 'none';
+    document.getElementById('stop-auto-btn').style.display = 'inline-flex';
+    document.getElementById('auto-feedback-container').style.display = 'block';
+    document.getElementById('auto-target-dist').innerText = Math.abs(targetVal);
+    document.getElementById('auto-status-text').innerText = "Iniciando trayecto...";
+    document.getElementById('auto-status-text').style.color = "var(--color-blue)";
+    document.getElementById('auto-progress-bar').style.background = "var(--color-blue)";
+    
+    updateAutopilotSupervisor(currentPos);
+}
+
+function stopAutopilot(reached = false) {
+    autopilotActive = false;
+    document.getElementById('start-auto-btn').style.display = 'inline-flex';
+    document.getElementById('stop-auto-btn').style.display = 'none';
+    
+    if (reached) {
+        document.getElementById('auto-status-text').innerText = "¡Objetivo alcanzado!";
+        document.getElementById('auto-status-text').style.color = "var(--color-green)";
+        document.getElementById('auto-progress-bar').style.background = "var(--color-green)";
+        document.getElementById('auto-progress-bar').style.width = "100%";
+        document.getElementById('auto-pct-text').innerText = "100%";
+        publishCommand({ cmd: "stop" });
+        
+        // Reset speed slider back to 0
+        document.getElementById('slider-speed').value = 0;
+        document.getElementById('val-target-speed').innerText = 0;
+    } else {
+        document.getElementById('auto-feedback-container').style.display = 'none';
+        publishCommand({ cmd: "stop" });
+    }
+}
+
+function updateAutopilotSupervisor(currentPos) {
+    if (!autopilotActive) return;
+
+    const totalDistance = Math.abs(autopilotTargetPos - autopilotStartPos);
+    if (totalDistance === 0) { stopAutopilot(true); return; }
+
+    const error = autopilotTargetPos - currentPos;
+    const absError = Math.abs(error);
+    const distanceTraveled = Math.abs(currentPos - autopilotStartPos);
+
+    // Calculate progress percentage
+    const pct = Math.min(Math.round((distanceTraveled / totalDistance) * 100), 99);
+    document.getElementById('auto-pct-text').innerText = pct + "%";
+    document.getElementById('auto-progress-bar').style.width = pct + "%";
+    document.getElementById('auto-curr-dist').innerText = Math.round(distanceTraveled);
+    document.getElementById('auto-error-ticks').innerText = Math.round(error);
+
+    // Hard stopping threshold (10 ticks margin)
+    if (absError <= 10) {
+        stopAutopilot(true);
+        return;
+    }
+
+    // Dynamic fluid deceleration curve
+    // Saturated between 45 ticks/s (minimum to move) and 180 ticks/s (safe maximum)
+    let speed = absError * 0.4;
+    if (speed > 180) speed = 180;
+    if (speed < 45) speed = 45;
+
+    // Direction
+    const currentDirection = error >= 0 ? 1 : -1;
+    const commandedSpeed = currentDirection * speed;
+
+    document.getElementById('auto-status-text').innerText = absError < 150 ? "Desacelerando..." : "Buscando objetivo...";
+    document.getElementById('auto-status-text').style.color = absError < 150 ? "var(--color-orange)" : "var(--color-blue)";
+
+    // Command both rear traction (autopilot velocity) and front steering (from current slider state)
+    const steerAngle = parseFloat(document.getElementById('slider-angle').value);
+    publishCommand({ cmd: "drive", speed: parseFloat(commandedSpeed.toFixed(1)), angle: steerAngle });
+}
+
 // --- DOM Events ---
 document.addEventListener("DOMContentLoaded", () => {
     initChart();
     setupCanvas();
+
+    // Start auto-discovery background client
+    initDiscovery();
+
+    // Setup periodic cleanup for discovered devices (every 5 seconds)
+    setInterval(() => {
+        const now = new Date();
+        discoveredDevices.forEach((dev, mac) => {
+            if ((now - dev.lastSeen) / 1000 > 30) {
+                dev.element.remove();
+                discoveredDevices.delete(mac);
+            }
+        });
+        const section = document.getElementById('discovery-section');
+        if (section && discoveredDevices.size === 0) {
+            section.style.display = 'none';
+        }
+    }, 5000);
 
     // Start auto-discovery background client
     initDiscovery();
@@ -500,15 +655,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
     slSpeed.addEventListener('input', e => {
         lbSpeed.innerText = e.target.value;
-        throttledDrive(slSpeed.value, slAngle.value);
+        if (document.getElementById('continuous-send').checked && !autopilotActive) {
+            throttledDrive(slSpeed.value, slAngle.value);
+        }
     });
     slAngle.addEventListener('input', e => {
         lbAngle.innerText = e.target.value;
-        throttledDrive(slSpeed.value, slAngle.value);
+        if (document.getElementById('continuous-send').checked && !autopilotActive) {
+            throttledDrive(slSpeed.value, slAngle.value);
+        }
     });
+
+    // Manual Send Buttons
+    document.getElementById('send-speed-btn').addEventListener('click', () => {
+        if (!autopilotActive) {
+            publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
+            // Alert or visual flash on click
+            const btn = document.getElementById('send-speed-btn');
+            btn.style.background = 'var(--color-green)';
+            setTimeout(() => { btn.style.background = ''; }, 300);
+        }
+    });
+    document.getElementById('send-angle-btn').addEventListener('click', () => {
+        if (!autopilotActive) {
+            publishCommand({ cmd: "drive", speed: parseFloat(slSpeed.value), angle: parseFloat(slAngle.value) });
+            const btn = document.getElementById('send-angle-btn');
+            btn.style.background = 'var(--color-green)';
+            setTimeout(() => { btn.style.background = ''; }, 300);
+        }
+    });
+
+    // Autopilot Buttons
+    document.getElementById('start-auto-btn').addEventListener('click', startAutopilot);
+    document.getElementById('stop-auto-btn').addEventListener('click', () => stopAutopilot(false));
 
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
+            if (autopilotActive) stopAutopilot(false);
             const s = btn.getAttribute('data-speed');
             const a = btn.getAttribute('data-angle');
             slSpeed.value = s; slAngle.value = a;
@@ -518,12 +701,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     document.getElementById('btn-estop').addEventListener('click', () => {
+        if (autopilotActive) stopAutopilot(false);
         slSpeed.value = 0; slAngle.value = 0;
         lbSpeed.innerText = 0; lbAngle.innerText = 0;
         publishCommand({ cmd: "stop" });
     });
 
     document.getElementById('btn-reset').addEventListener('click', () => {
+        if (autopilotActive) stopAutopilot(false);
         publishCommand({ cmd: "reset" });
         odometer = 0; resetCarPose();
     });
