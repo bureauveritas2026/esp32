@@ -160,7 +160,6 @@ void reconnectMQTT() {
 void setup() {
     Serial.begin(115200);
 
-    pinMode(PIN_STBY,      OUTPUT); digitalWrite(PIN_STBY, HIGH);
     pinMode(PIN_TRAC_IN1,  OUTPUT); pinMode(PIN_TRAC_IN2,  OUTPUT);
     pinMode(PIN_STEER_IN1, OUTPUT); pinMode(PIN_STEER_IN2, OUTPUT);
 
@@ -168,7 +167,9 @@ void setup() {
     setupLEDC(PIN_PWM_STEER, PWM_FREQ, PWM_RES, PWM_CH_STEER);
     setTraction(0); setSteering(0);
 
-    pinMode(PIN_ENC_TRAC_A,  INPUT_PULLUP); pinMode(PIN_ENC_TRAC_B,  INPUT_PULLUP);
+    // GPIO 34 and 35 are input-only and do not have internal pull-up/down resistors.
+    // They must use external pull-ups (configured here as standard INPUT).
+    pinMode(PIN_ENC_TRAC_A,  INPUT);        pinMode(PIN_ENC_TRAC_B,  INPUT);
     pinMode(PIN_ENC_STEER_A, INPUT_PULLUP); pinMode(PIN_ENC_STEER_B, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_ENC_TRAC_A),  isrTrac,  RISING);
     attachInterrupt(digitalPinToInterrupt(PIN_ENC_STEER_A), isrSteer, RISING);
