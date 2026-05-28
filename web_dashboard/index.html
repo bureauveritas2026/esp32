@@ -218,7 +218,7 @@
                             <label style="font-size:0.8rem;color:var(--text-secondary);margin:auto 0;">Motor:</label>
                             <select id="tune-motor" style="flex-grow:1;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);color:white;padding:6px;border-radius:6px;font-family:var(--font-primary);">
                                 <option value="trac">🔧 Tracción (PI - Velocidad)</option>
-                                <option value="steer">🔄 Dirección (PD - Ángulo)</option>
+                                <option value="steer" disabled>🔄 Dirección (PD Clásico - Control Fijo)</option>
                             </select>
                         </div>
                         <div class="tuning-inputs">
@@ -293,7 +293,57 @@
                             </div>
                         </div>
 
+                        <!-- Hardware Roles Swap (dynamic software router) -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding: 10px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2); margin-top: 4px; box-shadow: 0 0 10px rgba(239, 68, 68, 0.05);">
+                            <span style="display: flex; align-items: center; gap: 6px; color: #f87171; font-weight: 500;">
+                                <i class="fa-solid fa-right-left"></i> Intercambiar Roles (Tracción <-> Dirección)
+                            </span>
+                            <label class="switch">
+                                <input type="checkbox" id="cal-swap-hw">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
                         <button id="send-polarity-btn" class="btn btn-primary" style="width: 100%; padding: 8px 12px; margin-top: 4px;"><i class="fa-solid fa-floppy-disk"></i> Guardar y Aplicar Polaridad</button>
+                    </div>
+                </section>
+
+                <!-- DIAGNOSTICS CARD -->
+                <section class="card diagnostics-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-stethoscope" style="color: var(--color-orange);"></i>
+                        <h2>Diagnóstico de Hardware (Raw PWM)</h2>
+                    </div>
+                    <div class="diagnostics-body" style="display: flex; flex-direction: column; gap: 12px; padding: 15px;">
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            Prueba los motores aplicando un pulso de PWM directo durante <strong>3 segundos</strong> (sin control de bucle cerrado) para verificar si los encoders leen y si las polaridades físicas son correctas.
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label for="diag-motor" style="font-size: 0.8rem; color: var(--text-secondary);">Motor a probar</label>
+                                <select id="diag-motor" style="padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 0.85rem; font-family: var(--font-primary);">
+                                    <option value="trac">Tracción (Atrás)</option>
+                                    <option value="steer">Dirección (Adelante)</option>
+                                </select>
+                            </div>
+                            
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label for="diag-pwm" style="font-size: 0.8rem; color: var(--text-secondary);">Valor PWM (-255 a 255)</label>
+                                <input type="number" id="diag-pwm" value="100" min="-255" max="255" style="padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 0.85rem; text-align: center; font-family: var(--font-primary);">
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 8px; margin-top: 4px;">
+                            <button id="btn-diag-run" class="btn btn-warning" style="flex: 2; padding: 8px 12px;"><i class="fa-solid fa-play"></i> Iniciar (3s)</button>
+                            <button id="btn-diag-stop" class="btn btn-danger" style="flex: 1; padding: 8px 12px;"><i class="fa-solid fa-circle-stop"></i> Parar</button>
+                        </div>
+
+                        <div style="margin-top: 6px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.85rem;">
+                            <div id="diag-status" style="color: var(--text-secondary);">
+                                <span style="color:#475569">Sin diagnóstico activo</span>
+                            </div>
+                        </div>
                     </div>
                 </section>
                 
@@ -351,6 +401,24 @@
                                 <span class="metric-name">Error:</span>
                                 <span id="num-err-steer" class="metric-val">0</span>
                                 <span class="metric-unit">°</span>
+                            </div>
+                            
+                            <!-- Limit indicators and position bar -->
+                            <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.75rem;">
+                                    <span id="lim-ccw" style="color: #475569; font-weight: bold; transition: color 0.2s;">
+                                        <i class="fa-solid fa-circle-left"></i> CCW (-360°)
+                                    </span>
+                                    <span style="color: var(--text-secondary); font-size: 0.7rem;">Giro Físico Delantero</span>
+                                    <span id="lim-cw" style="color: #475569; font-weight: bold; transition: color 0.2s;">
+                                        CW (+360°) <i class="fa-solid fa-circle-right"></i>
+                                    </span>
+                                </div>
+                                <div class="bar-bg" style="height: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255,255,255,0.08); position: relative; overflow: hidden;">
+                                    <div id="lim-pos-bar" style="width: 50%; height: 100%; background: #3b82f6; border-radius: 5px; transition: width 0.1s ease-out, background-color 0.2s;"></div>
+                                    <!-- Center marker -->
+                                    <div style="position: absolute; left: 50%; top: 0; width: 2px; height: 100%; background: rgba(255,255,255,0.4); transform: translateX(-50%);"></div>
+                                </div>
                             </div>
                         </div>
                     </div>

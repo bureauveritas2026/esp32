@@ -419,44 +419,91 @@ function onMessageArrived(message) {
         document.getElementById('num-pwm-trac').innerText     = Math.round(d.trac.pwm);
         document.getElementById('num-pos-trac').innerText     = d.trac.pos;
 
-        // --- Steering numeric telemetry ---
-        document.getElementById('num-target-angle').innerText = d.steer.target;
-        document.getElementById('num-pos-steer').innerText    = d.steer.pos;
+        // --- Steering numeric telemetry (firmware sends degrees) ---
+        const steerTargetDeg = (typeof d.steer.target === 'number') ? d.steer.target : 0;
+        const steerPosDeg    = (typeof d.steer.pos    === 'number') ? d.steer.pos    : 0;
+        const steerErrDeg    = (typeof d.steer.err    === 'number') ? d.steer.err    : 0;
+        document.getElementById('num-target-angle').innerText = steerTargetDeg.toFixed(1);
+        document.getElementById('num-pos-steer').innerText    = steerPosDeg.toFixed(1);
         document.getElementById('num-pwm-steer').innerText    = Math.round(d.steer.pwm);
-        document.getElementById('num-err-steer').innerText    = d.steer.err.toFixed(2);
+        document.getElementById('num-err-steer').innerText    = steerErrDeg.toFixed(1);
 
-        // --- Charts ---
-        const tracErr  = d.trac.err  || 0;
-        const steerErr = d.steer.err || 0;
-        const tracDu   = d.trac.du   || 0;
-        pushChart(d.trac.target, measSpeed, d.steer.target, d.steer.pos, tracErr, steerErr, tracDu);
-
-        // --- Fuzzy inspector bars ---
-        document.getElementById('val-fuzzy-err-trac').innerText  = tracErr.toFixed(2);
-        document.getElementById('val-fuzzy-derr-trac').innerText = (d.trac.derr || 0).toFixed(2);
-        if (d.fuzzy) {
-            d.fuzzy.trac_mu_e.forEach((v,i)  => setBar('bar-te-'+i,  'txt-te-'+i,  v));
-            d.fuzzy.trac_mu_de.forEach((v,i) => setBar('bar-tde-'+i, 'txt-tde-'+i, v));
-            document.getElementById('val-fuzzy-err-steer').innerText  = steerErr.toFixed(2);
-            document.getElementById('val-fuzzy-derr-steer').innerText = (d.steer.derr || 0).toFixed(2);
-            d.fuzzy.steer_mu_e.forEach((v,i)  => setBar('bar-se-'+i,  'txt-se-'+i,  v));
-            d.fuzzy.steer_mu_de.forEach((v,i) => setBar('bar-sde-'+i, 'txt-sde-'+i, v));
+        // --- Steering hardware limits indicator ---
+        if (d.limits) {
+            const limCW  = document.getElementById('lim-cw');
+            const limCCW = document.getElementById('lim-ccw');
+            const limPos = document.getElementById('lim-pos-bar');
+            if (limCW)  limCW.style.color  = d.limits.at_cw  === true || d.limits.at_cw  === 'true'  ? '#ef4444' : '#475569';
+            if (limCCW) limCCW.style.color = d.limits.at_ccw === true || d.limits.at_ccw === 'true'  ? '#ef4444' : '#475569';
+            if (limPos) {
+                // Map steer pos to percentage bar: -826 = 0%, 0 = 50%, +826 = 100%
+                const pct = ((d.limits.steer_pos + 826) / 1652 * 100).toFixed(1);
+                limPos.style.width = Math.max(0, Math.min(100, pct)) + '%';
+                limPos.style.background = (d.limits.at_cw === true || d.limits.at_cw === 'true' || d.limits.at_ccw === true || d.limits.at_ccw === 'true') ? '#ef4444' : '#3b82f6';
+            }
         }
 
-        // --- 2D Ackermann Simulator ---
-        updateCarKinematics(d.trac.pos, d.steer.pos);
+        // --- Diagnostics panel update ---
+        if (d.diag) {
+            const diagPanel = document.getElementById('diag-status');
+            if (diagPanel) {
+                if (d.diag.active) {
+                    diagPanel.innerHTML = `<span style="color:#f97316">&#9654; DIAGNÓSTICO ACTIVO — Motor: <strong>${d.diag.motor.toUpperCase()}</strong>, PWM: <strong>${d.diag.pwm}</strong></span>`;
+                } else {
+                    diagPanel.innerHTML = `<span style="color:#475569">Sin diagnóstico activo</span>`;
+                }
+            }
+        }
+
+        // --- Charts (target speed, actual speed, steering angle) ---
+        const tracErr  = d.trac.err  || 0;
+        const steerErr = steerErrDeg;
+        const tracDu   = d.trac.du   || 0;
+        pushChart(d.trac.target, measSpeed, steerTargetDeg, steerPosDeg, tracErr, steerErr, tracDu);
+
+        // --- Fuzzy inspector bars (Traction only now — steering uses PD) ---
+        document.getElementById('val-fuzzy-err-trac').innerText  = (d.trac.target - measSpeed).toFixed(1);
+        document.getElementById('val-fuzzy-derr-trac').innerText = (d.trac.derr || 0).toFixed(2);
+        // Steering PD — show error magnitude in fuzzy bar format
+        document.getElementById('val-fuzzy-err-steer').innerText  = steerErrDeg.toFixed(1);
+        document.getElementById('val-fuzzy-derr-steer').innerText = '(PD Clásico)';
+        // Simulate bar fill from steering error magnitude
+        const steerNormErr = Math.min(1.0, Math.abs(steerErrDeg) / 180.0);
+        setBar('bar-se-2', 'txt-se-2', 1 - steerNormErr); // ZE rises as error shrinks
+        if (steerErrDeg > 0) {
+            setBar('bar-se-3', 'txt-se-3', steerNormErr * 0.6);
+            setBar('bar-se-4', 'txt-se-4', steerNormErr * 0.4);
+            ['bar-se-0','bar-se-1'].forEach(id => { const el=document.getElementById(id); if(el) el.style.width='0%'; });
+            ['txt-se-0','txt-se-1'].forEach(id => { const el=document.getElementById(id); if(el) el.innerText='0%'; });
+        } else {
+            setBar('bar-se-0', 'txt-se-0', steerNormErr * 0.4);
+            setBar('bar-se-1', 'txt-se-1', steerNormErr * 0.6);
+            ['bar-se-3','bar-se-4'].forEach(id => { const el=document.getElementById(id); if(el) el.style.width='0%'; });
+            ['txt-se-3','txt-se-4'].forEach(id => { const el=document.getElementById(id); if(el) el.innerText='0%'; });
+        }
+        if (d.fuzzy && d.fuzzy.trac_mu_e) {
+            d.fuzzy.trac_mu_e.forEach((v,i)  => setBar('bar-te-'+i,  'txt-te-'+i,  v));
+        }
+        if (d.fuzzy && d.fuzzy.trac_mu_de) {
+            d.fuzzy.trac_mu_de.forEach((v,i) => setBar('bar-tde-'+i, 'txt-tde-'+i, v));
+        }
+
+        // --- 2D Ackermann Simulator (steer in degrees) ---
+        updateCarKinematics(d.trac.pos, steerPosDeg);
 
         // --- Precision Arrival (ESP32-Side) Feedback ---
         if (d.arrival) {
             updateArrivalFeedback(d.arrival);
         }
 
-        // --- Dynamic Polarity (NVS) Calibration Sync ---
+        // --- Dynamic Polarity + Swap (NVS) Calibration Sync ---
         if (d.polarity && !polaritySynced) {
             document.getElementById('cal-t-mot').checked = (d.polarity.t_mot === -1);
             document.getElementById('cal-t-enc').checked = (d.polarity.t_enc === -1);
             document.getElementById('cal-s-mot').checked = (d.polarity.s_mot === -1);
             document.getElementById('cal-s-enc').checked = (d.polarity.s_enc === -1);
+            const swapEl = document.getElementById('cal-swap-hw');
+            if (swapEl) swapEl.checked = (d.polarity.swap === 1);
             polaritySynced = true;
         }
 
@@ -760,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
         alert(`Parámetros enviados → Motor ${label}\nGe=${ge}  Gde=${gde}  Gu=${gu}`);
     });
 
-    // Send Polarity Calibration Command
+    // Send Polarity Calibration Command (incluye swap hardware)
     document.getElementById('send-polarity-btn').addEventListener('click', () => {
         if (!isConnected) { alert("Conéctate primero al ESP32."); return; }
         
@@ -768,12 +815,26 @@ document.addEventListener("DOMContentLoaded", () => {
         const t_enc = document.getElementById('cal-t-enc').checked ? -1 : 1;
         const s_mot = document.getElementById('cal-s-mot').checked ? -1 : 1;
         const s_enc = document.getElementById('cal-s-enc').checked ? -1 : 1;
+        const swapEl = document.getElementById('cal-swap-hw');
+        const swap   = (swapEl && swapEl.checked) ? 1 : 0;
         
-        polaritySynced = false; // force re-sync on next telemetry
-        publishCommand({ cmd: "polarity", t_mot, t_enc, s_mot, s_enc });
-        alert(`Polaridad de hardware enviada al ESP32:\n\n` + 
-              `⚙️ Tracción → Motor: ${t_mot === -1 ? 'Invertido (-1)' : 'Normal (1)'}, Encoder: ${t_enc === -1 ? 'Invertido (-1)' : 'Normal (1)'}\n` +
-              `🔄 Dirección → Motor: ${s_mot === -1 ? 'Invertido (-1)' : 'Normal (1)'}, Encoder: ${s_enc === -1 ? 'Invertido (-1)' : 'Normal (1)'}\n\n` +
-              `Se aplicará en caliente y se guardará permanentemente en la memoria NVS.`);
+        polaritySynced = false;
+        publishCommand({ cmd: "polarity", t_mot, t_enc, s_mot, s_enc, swap });
+        alert(`Configuración de hardware enviada al ESP32:\n\n` +
+              `⚙️ Tracción → Motor: ${t_mot === -1 ? 'Invertido' : 'Normal'}, Encoder: ${t_enc === -1 ? 'Invertido' : 'Normal'}\n` +
+              `🔄 Dirección → Motor: ${s_mot === -1 ? 'Invertido' : 'Normal'}, Encoder: ${s_enc === -1 ? 'Invertido' : 'Normal'}\n` +
+              `🔀 Swap Cables: ${swap === 1 ? 'ACTIVADO (motores cruzados)' : 'Desactivado'}\n\n` +
+              `Se guardará permanentemente en la memoria NVS.`);
+    });
+
+    // Diagnostics raw PWM
+    document.getElementById('btn-diag-run').addEventListener('click', () => {
+        if (!isConnected) { alert("Conéctate primero."); return; }
+        const motor = document.getElementById('diag-motor').value;
+        const pwm   = parseInt(document.getElementById('diag-pwm').value) || 0;
+        publishCommand({ cmd: "diagnostics", motor, pwm });
+    });
+    document.getElementById('btn-diag-stop').addEventListener('click', () => {
+        publishCommand({ cmd: "stop" });
     });
 });
