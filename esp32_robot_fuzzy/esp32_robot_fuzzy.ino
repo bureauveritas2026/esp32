@@ -200,6 +200,7 @@ void setup() {
     Serial.println();
 
     setupWiFi();
+    mqttClient.setBufferSize(1024); // Increase buffer size to 1024 to support large telemetry JSON packets
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
 
@@ -248,24 +249,25 @@ void loop() {
         long posTrac = encTrac; long posSteer = encSteer;
         interrupts();
 
-        // Compute traction speed for telemetry snapshot
-        float spdSnap = (float)(posTrac - lastEncTrac + (posTrac - lastEncTrac)); // approx
-        char buf[768];
+        // Accurate speed snapshot: ticks since last telemetry / elapsed seconds
+        static long lastPosTelTrac = 0;
+        float spdSnap = (float)(posTrac - lastPosTelTrac) / (TELEMETRY_INTERVAL_MS / 1000.0f);
+        lastPosTelTrac = posTrac;
+
+        char buf[800];
         snprintf(buf, sizeof(buf),
             "{\"connected\":true,"
              "\"trac\":{\"target\":%.1f,\"speed\":%.1f,\"pos\":%ld,\"pwm\":%.1f,"
-                       "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
-             "\"steer\":{\"target\":%ld,\"pos\":%ld,\"pwm\":%.1f,"
                         "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
+             "\"steer\":{\"target\":%ld,\"pos\":%ld,\"pwm\":%.1f,"
+                         "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
              "\"fuzzy\":{"
                "\"trac_mu_e\":[%.2f,%.2f,%.2f,%.2f,%.2f],"
                "\"trac_mu_de\":[%.2f,%.2f,%.2f],"
                "\"steer_mu_e\":[%.2f,%.2f,%.2f,%.2f,%.2f],"
                "\"steer_mu_de\":[%.2f,%.2f,%.2f]"
              "}}",
-            targetSpeed,
-            fuzzyTrac.lastState.error + targetSpeed, // measured ≈ target - error
-            posTrac, currentPwmTrac,
+            targetSpeed, spdSnap, posTrac, currentPwmTrac,
             fuzzyTrac.lastState.error, fuzzyTrac.lastState.d_error, fuzzyTrac.lastState.delta_pwm,
 
             targetAngle, posSteer, currentPwmSteer,
