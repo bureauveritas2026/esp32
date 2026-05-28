@@ -6,15 +6,15 @@
 // --- TB6612FNG Motor Driver Pins ---
 // (STBY pin is not controlled by ESP32, connected to VCC physically)
 
-// Traction Motor Control Pins (Rear - Motor A)
-#define PIN_TRAC_IN1   27  // AIN1
-#define PIN_TRAC_IN2   26  // AIN2
-#define PIN_PWM_TRAC   14  // PWMA
+// Traction Motor Control Pins (Rear - Motor B)
+#define PIN_TRAC_IN1   33  // BIN1
+#define PIN_TRAC_IN2   32  // BIN2
+#define PIN_PWM_TRAC   25  // PWMB
 
-// Steering Motor Control Pins (Front - Motor B)
-#define PIN_STEER_IN1   33  // BIN1
-#define PIN_STEER_IN2   32  // BIN2
-#define PIN_PWM_STEER   25  // PWMB
+// Steering Motor Control Pins (Front - Motor A)
+#define PIN_STEER_IN1   27  // AIN1
+#define PIN_STEER_IN2   26  // AIN2
+#define PIN_PWM_STEER   14  // PWMA
 
 // --- N20 Quadrature Encoder Pins ---
 // Traction Motor Encoder Pins (Encoder 1)

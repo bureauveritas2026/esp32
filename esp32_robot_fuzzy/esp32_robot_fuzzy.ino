@@ -42,8 +42,8 @@ long lastEncTrac = 0;
 float targetSpeed  = 0.0f;  // ticks/sec for traction motor
 long  targetAngle  = 0;     // encoder ticks for steering angle
 
-// Steering software limits (prevents physical over-rotation)
-const long STEER_MAX = 200;
+// Steering software limits (prevents physical over-rotation, 826 ticks = 360 degrees)
+const long STEER_MAX = 826;
 
 // --- Output Values ---
 float currentPwmTrac  = 0.0f;
