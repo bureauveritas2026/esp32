@@ -1,8 +1,27 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <esp_arduino_version.h>
 #include "PinDefinitions.h"
 #include "Config.h"
 #include "FuzzyController.h"
+
+// --- LEDC PWM Compatibility Wrapper for ESP32 Core v2.x and v3.x ---
+void setupLEDC(uint8_t pin, uint32_t freq, uint8_t resolution, uint8_t channel) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcAttach(pin, freq, resolution);
+#else
+    ledcSetup(channel, freq, resolution);
+    ledcAttachPin(pin, channel);
+#endif
+}
+
+void writeLEDC(uint8_t pin, uint8_t channel, uint32_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(pin, duty);
+#else
+    ledcWrite(channel, duty);
+#endif
+}
 
 // --- Global Objects ---
 WiFiClient espClient;
@@ -43,17 +62,17 @@ String topicConfig;
 // Reading Channel B on rising edge of Channel A determines direction
 void IRAM_ATTR leftEncoderISR() {
     if (digitalRead(PIN_ENC_A_B) == HIGH) {
-        encoderLeftTicks++;
+        encoderLeftTicks = encoderLeftTicks + 1;
     } else {
-        encoderLeftTicks--;
+        encoderLeftTicks = encoderLeftTicks - 1;
     }
 }
 
 void IRAM_ATTR rightEncoderISR() {
     if (digitalRead(PIN_ENC_B_B) == HIGH) {
-        encoderRightTicks++;
+        encoderRightTicks = encoderRightTicks + 1;
     } else {
-        encoderRightTicks--;
+        encoderRightTicks = encoderRightTicks - 1;
     }
 }
 
@@ -63,30 +82,30 @@ void setMotorSpeeds(int pwmLeft, int pwmRight) {
     if (pwmLeft > 0) {
         digitalWrite(PIN_AIN1, HIGH);
         digitalWrite(PIN_AIN2, LOW);
-        ledcWrite(PWM_CH_LEFT, constrain(pwmLeft, 0, 255));
+        writeLEDC(PIN_PWMA, PWM_CH_LEFT, constrain(pwmLeft, 0, 255));
     } else if (pwmLeft < 0) {
         digitalWrite(PIN_AIN1, LOW);
         digitalWrite(PIN_AIN2, HIGH);
-        ledcWrite(PWM_CH_LEFT, constrain(abs(pwmLeft), 0, 255));
+        writeLEDC(PIN_PWMA, PWM_CH_LEFT, constrain(abs(pwmLeft), 0, 255));
     } else {
         digitalWrite(PIN_AIN1, LOW);
         digitalWrite(PIN_AIN2, LOW);
-        ledcWrite(PWM_CH_LEFT, 0);
+        writeLEDC(PIN_PWMA, PWM_CH_LEFT, 0);
     }
 
     // Right Motor (Motor B)
     if (pwmRight > 0) {
         digitalWrite(PIN_BIN1, HIGH);
         digitalWrite(PIN_BIN2, LOW);
-        ledcWrite(PWM_CH_RIGHT, constrain(pwmRight, 0, 255));
+        writeLEDC(PIN_PWMB, PWM_CH_RIGHT, constrain(pwmRight, 0, 255));
     } else if (pwmRight < 0) {
         digitalWrite(PIN_BIN1, LOW);
         digitalWrite(PIN_BIN2, HIGH);
-        ledcWrite(PWM_CH_RIGHT, constrain(abs(pwmRight), 0, 255));
+        writeLEDC(PIN_PWMB, PWM_CH_RIGHT, constrain(abs(pwmRight), 0, 255));
     } else {
         digitalWrite(PIN_BIN1, LOW);
         digitalWrite(PIN_BIN2, LOW);
-        ledcWrite(PWM_CH_RIGHT, 0);
+        writeLEDC(PIN_PWMB, PWM_CH_RIGHT, 0);
     }
 }
 
@@ -227,10 +246,8 @@ void setup() {
     digitalWrite(PIN_STBY, HIGH); // Enable motor driver
 
     // 2. Setup PWM channels
-    ledcSetup(PWM_CH_LEFT, PWM_FREQ, PWM_RES);
-    ledcSetup(PWM_CH_RIGHT, PWM_FREQ, PWM_RES);
-    ledcAttachPin(PIN_PWMA, PWM_CH_LEFT);
-    ledcAttachPin(PIN_PWMB, PWM_CH_RIGHT);
+    setupLEDC(PIN_PWMA, PWM_FREQ, PWM_RES, PWM_CH_LEFT);
+    setupLEDC(PIN_PWMB, PWM_FREQ, PWM_RES, PWM_CH_RIGHT);
 
     setMotorSpeeds(0, 0);
 
