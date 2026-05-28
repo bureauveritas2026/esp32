@@ -7,8 +7,8 @@
 // (STBY pin is not controlled by ESP32, connected to VCC physically)
 
 // Traction Motor Control Pins (Rear - Motor B)
-#define PIN_TRAC_IN1   32  // BIN1
-#define PIN_TRAC_IN2   33  // BIN2
+#define PIN_TRAC_IN1   33  // BIN1
+#define PIN_TRAC_IN2   32  // BIN2
 #define PIN_PWM_TRAC   25  // PWMB
 
 // Steering Motor Control Pins (Front - Motor A)

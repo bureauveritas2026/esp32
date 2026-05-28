@@ -36,8 +36,11 @@ Preferences  prefs; // Preferences object for persistent hardware calibration
 // Gu: output scaler — higher = faster response
 // minPwm: minimum PWM to overcome N20 motor static friction (~55 for TB6612FNG)
 // deadZoneThreshold: error below which dead-zone compensation is disabled
-FuzzyController fuzzyTrac(0.01f, 0.002f, 25.0f, true,  55.0f, 2.0f);
-FuzzyController fuzzySteer(0.02f, 0.005f, 40.0f, false, 55.0f, 2.0f);
+// Traction PI: Ge=error norm, Gde=d_error norm, Gu=output scale, integrate=true
+// Steering PD PURE: Gu must be HIGH because output is NOT accumulated — direct proportional action
+// With Gu=220, a normalized error of 1.0 → delta_pwm = 220 (full drive), error of 0.1 → 22 PWM (fine control)
+FuzzyController fuzzyTrac(0.008f, 0.002f, 30.0f, true,  55.0f, 3.0f);
+FuzzyController fuzzySteer(0.01f,  0.004f, 220.0f, false, 60.0f, 4.0f);
 
 // --- Encoder State ---
 volatile long encTrac  = 0;
@@ -81,10 +84,11 @@ long  startTracPos        = 0;
 float remainingDistCm     = 0.0f;
 
 // Closed loop velocity profiling constants
-const float arrivalKpTrac      = 0.8f;   // Speed target = Kp * remaining ticks
-const float maxArrivalSpeed    = 150.0f; // Limit target speed during arrival
-const float arrivalTolerance   = 8.0f;   // Position reached threshold (ticks = ~3.2mm)
-const float steerTolerance     = 6.0f;   // Steering alignment threshold (ticks = ~2.6 deg)
+const float arrivalKpTrac      = 1.2f;   // Speed target = Kp * remaining ticks (higher = faster start)
+const float maxArrivalSpeed    = 200.0f; // Limit target speed during arrival
+const float arrivalTolerance   = 10.0f;  // Position reached threshold (~4mm)
+const float steerTolerance     = 5.0f;   // Steering alignment threshold (~2.2 deg)
+const float steerVelTolerance  = 8.0f;   // Max angular velocity (ticks/s) when declaring alignment stable
 int steeringStableCount        = 0;      // Consecutive loops the steering must be stable before moving
 
 // ---- ISRs ----
@@ -398,23 +402,28 @@ void loop() {
                 currentPwmSteer = fuzzySteer.compute((float)targetAngleTicks, (float)tSteer, dt);
                 setSteering((int)currentPwmSteer);
 
-                // Check stabilization
+                // Check stabilization: error within tolerance AND motor is nearly stationary
                 float errorSteer = (float)targetAngleTicks - (float)tSteer;
-                float d_errorSteer = fuzzySteer.lastState.d_error;
+                // d_error here is the true angular velocity (ticks/s) since the PD controller
+                // normalizes by dt internally — use lastState.d_error as raw velocity reference
+                float steerVel = fuzzySteer.lastState.d_error;
 
-                if (fabsf(errorSteer) <= steerTolerance && fabsf(d_errorSteer) < 15.0f) {
+                if (fabsf(errorSteer) <= steerTolerance && fabsf(steerVel) < steerVelTolerance) {
                     steeringStableCount++;
-                    if (steeringStableCount >= 3) { // Must be stable for 3 consecutive samples (150ms)
+                    if (steeringStableCount >= 4) { // 4 consecutive samples = 200ms stability
                         arrivalPhase = 2;
+                        setSteering(0); // hard-stop steering before switching
                         noInterrupts();
                         startTracPos = encTrac;
                         interrupts();
                         fuzzyTrac.reset(); // clear integrator for perfect translation start
                         steeringStableCount = 0;
-                        Serial.println("Arrival: Phase 1 complete. Starting Phase 2 (Translation).");
+                        Serial.printf("Arrival Phase 1 OK → Steer error=%.1f ticks, vel=%.1f ticks/s\n",
+                                      errorSteer, steerVel);
+                        Serial.println("Starting Phase 2 (Translation).");
                     }
                 } else {
-                    steeringStableCount = 0;
+                    steeringStableCount = 0; // reset if any instability
                 }
             }
             else if (arrivalPhase == 2) {
@@ -428,12 +437,17 @@ void loop() {
                 long remainingTicks = targetTracTicks - traveledTicks;
                 remainingDistCm = (float)remainingTicks / TICKS_PER_CM;
 
-                // Cascaded speed profiling: slow down proportionally as we arrive
+                // Cascaded speed profiling: proportional ramp down as we approach target.
+                // Minimum speed 25 ticks/s to ensure motor always overcomes friction until very close.
                 float speedTarget = arrivalKpTrac * (float)remainingTicks;
                 speedTarget = constrain(speedTarget, -maxArrivalSpeed, maxArrivalSpeed);
 
-                // Simple dead-band to stop completely without oscillation
-                if (fabsf(speedTarget) < 5.0f) {
+                // Dead-band: below 12 ticks/s target (fine approach zone) step down gracefully
+                if (fabsf(speedTarget) < 12.0f && fabsf(speedTarget) > 0.0f) {
+                    speedTarget = (speedTarget > 0.0f) ? 12.0f : -12.0f;
+                }
+                // Hard stop zone — already within tolerance
+                if (abs(remainingTicks) <= (long)arrivalTolerance) {
                     speedTarget = 0.0f;
                 }
 

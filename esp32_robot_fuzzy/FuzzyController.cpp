@@ -69,11 +69,15 @@ float FuzzyController::compute(float target, float current, float dt) {
     float delta_u = (sum_fs > 0.0f) ? sum_wo / sum_fs : 0.0f;
     float delta_pwm = delta_u * Gu;
 
-    // Both PI (traction) and PD (steering) use integration/accumulation
-    // PI accumulates velocity corrections over time
-    // PD accumulates position corrections — keeps driving motor until target reached
-    integrated_output = constrain(integrated_output + delta_pwm, -255.0f, 255.0f);
-    float output = integrated_output;
+    float output = 0.0f;
+    if (useIntegration) {
+        // PI Mode (Traction): Accumulate corrections over time to regulate velocity
+        integrated_output = constrain(integrated_output + delta_pwm, -255.0f, 255.0f);
+        output = integrated_output;
+    } else {
+        // PD Mode (Steering): Proportional-Derivative direct action to avoid Type 2 system runaway
+        output = delta_pwm;
+    }
 
     // Dead-zone compensation: if there is significant error but PWM is below
     // the motor's static friction threshold, force the minimum PWM needed to move
@@ -81,11 +85,11 @@ float FuzzyController::compute(float target, float current, float dt) {
         output = (output > 0.0f) ? minPwm : -minPwm;
     }
 
-    // When error is very small (target reached), allow output to settle to zero
-    // This prevents the integrator from "holding" a residual PWM on the steering motor
-    if (!useIntegration && fabsf(error) <= deadZoneThreshold && fabsf(d_error) < deadZoneThreshold) {
-        integrated_output *= 0.85f; // Exponential decay toward zero
-        output = integrated_output;
+    // For PD steering control, force output to exactly 0 when the target is reached 
+    // to prevent any holding torque jitter or small micro-oscillations.
+    if (!useIntegration && fabsf(error) <= deadZoneThreshold) {
+        output = 0.0f;
+        integrated_output = 0.0f; // clean accumulator
     }
 
     output = constrain(output, -255.0f, 255.0f);
