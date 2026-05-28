@@ -36,11 +36,8 @@ Preferences  prefs; // Preferences object for persistent hardware calibration
 // Gu: output scaler — higher = faster response
 // minPwm: minimum PWM to overcome N20 motor static friction (~55 for TB6612FNG)
 // deadZoneThreshold: error below which dead-zone compensation is disabled
-// Traction PI: Ge=error norm, Gde=d_error norm, Gu=output scale, integrate=true
-// Steering PD PURE: Gu must be HIGH because output is NOT accumulated — direct proportional action
-// With Gu=220, a normalized error of 1.0 → delta_pwm = 220 (full drive), error of 0.1 → 22 PWM (fine control)
-FuzzyController fuzzyTrac(0.008f, 0.002f, 30.0f, true,  55.0f, 3.0f);
-FuzzyController fuzzySteer(0.01f,  0.004f, 220.0f, false, 60.0f, 4.0f);
+FuzzyController fuzzyTrac(0.01f, 0.002f, 25.0f, true,  55.0f, 2.0f);
+FuzzyController fuzzySteer(0.02f, 0.005f, 40.0f, false, 55.0f, 2.0f);
 
 // --- Encoder State ---
 volatile long encTrac  = 0;
@@ -65,6 +62,15 @@ const long STEER_MAX = 826;
 float currentPwmTrac  = 0.0f;
 float currentPwmSteer = 0.0f;
 
+// --- Stall Protection State ---
+unsigned long lastSteerMoveTime   = 0;
+long          lastSteerPosForStall = 0;
+volatile bool steerStallError      = false;
+
+unsigned long lastTracMoveTime     = 0;
+long          lastTracPosForStall  = 0;
+volatile bool tracStallError       = false;
+
 // --- Timing ---
 unsigned long lastControlTime   = 0;
 unsigned long lastTelemetryTime = 0;
@@ -84,11 +90,10 @@ long  startTracPos        = 0;
 float remainingDistCm     = 0.0f;
 
 // Closed loop velocity profiling constants
-const float arrivalKpTrac      = 1.2f;   // Speed target = Kp * remaining ticks (higher = faster start)
-const float maxArrivalSpeed    = 200.0f; // Limit target speed during arrival
-const float arrivalTolerance   = 10.0f;  // Position reached threshold (~4mm)
-const float steerTolerance     = 5.0f;   // Steering alignment threshold (~2.2 deg)
-const float steerVelTolerance  = 8.0f;   // Max angular velocity (ticks/s) when declaring alignment stable
+const float arrivalKpTrac      = 0.8f;   // Speed target = Kp * remaining ticks
+const float maxArrivalSpeed    = 150.0f; // Limit target speed during arrival
+const float arrivalTolerance   = 8.0f;   // Position reached threshold (ticks = ~3.2mm)
+const float steerTolerance     = 6.0f;   // Steering alignment threshold (ticks = ~2.6 deg)
 int steeringStableCount        = 0;      // Consecutive loops the steering must be stable before moving
 
 // ---- ISRs ----
@@ -101,6 +106,11 @@ void IRAM_ATTR isrSteer() {
 
 // ---- Motor Write ----
 void setTraction(int pwm) {
+    // Cut power if stall protection is triggered
+    if (tracStallError) {
+        pwm = 0;
+    }
+
     // Apply physical motor polarity inversion dynamically
     pwm = pwm * tracMotorDir;
 
@@ -115,11 +125,21 @@ void setTraction(int pwm) {
 }
 
 void setSteering(int pwm) {
+    // Cut power if stall protection is triggered
+    if (steerStallError) {
+        pwm = 0;
+    }
+
     // Apply software end-stop limits
     noInterrupts();
     long pos = encSteer;
     interrupts();
-    if ((pos >= STEER_MAX && pwm > 0) || (pos <= -STEER_MAX && pwm < 0)) pwm = 0;
+
+    // Check boundary using the effective polarity direction (steerMotorDir * steerEncDir)
+    int effDir = steerMotorDir * steerEncDir;
+    if ((pos >= STEER_MAX && pwm * effDir > 0) || (pos <= -STEER_MAX && pwm * effDir < 0)) {
+        pwm = 0;
+    }
 
     // Apply physical motor polarity inversion dynamically
     pwm = pwm * steerMotorDir;
@@ -152,10 +172,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
     for (unsigned int i = 0; i < len; i++) p += (char)payload[i];
     Serial.println("CMD: " + p);
 
+    // Reset stall protections and timers on receipt of any command
+    steerStallError = false;
+    tracStallError = false;
+    lastSteerMoveTime = millis();
+    lastTracMoveTime = millis();
+
     if (p.indexOf("\"stop\"") != -1) {
         isArrivalActive = false;
         arrivalPhase = 0;
-        targetSpeed = 0; targetAngle = 0;
+        targetSpeed = 0.0f; targetAngle = 0;
         fuzzyTrac.reset(); fuzzySteer.reset();
         setTraction(0); setSteering(0);
         remainingDistCm = 0.0f;
@@ -165,8 +191,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
         arrivalPhase = 0;
         remainingDistCm = 0.0f;
         targetSpeed = parseVal(p, "\"speed\"");
-        targetAngle = (long)parseVal(p, "\"angle\"");
-        targetAngle = constrain(targetAngle, -STEER_MAX, STEER_MAX);
+        
+        // Manual steering input is received in degrees, constrained, and converted to absolute ticks
+        float angleDeg = parseVal(p, "\"angle\"");
+        angleDeg = constrain(angleDeg, -360.0f, 360.0f);
+        targetAngle = (long)(angleDeg * (826.0f / 360.0f));
     } else if (p.indexOf("\"goto\"") != -1) {
         float distCm = parseVal(p, "\"dist\"");
         float angleDeg = parseVal(p, "\"angle\"");
@@ -283,7 +312,10 @@ void setupWiFi() {
 
 // ---- MQTT Reconnect ----
 void reconnectMQTT() {
-    while (!mqttClient.connected()) {
+    static unsigned long lastReconnectAttempt = 0;
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt > 5000) {
+        lastReconnectAttempt = now;
         Serial.print("MQTT...");
         if (mqttClient.connect(clientId.c_str())) {
             mqttClient.subscribe(topicCommand.c_str());
@@ -291,7 +323,6 @@ void reconnectMQTT() {
             Serial.println("OK");
         } else {
             Serial.print("ERR "); Serial.println(mqttClient.state());
-            delay(5000);
         }
     }
 }
@@ -354,11 +385,12 @@ void setup() {
     Serial.println();
 
     setupWiFi();
-    mqttClient.setBufferSize(1024); // Increase buffer size to 1024 to support large telemetry JSON packets
+    mqttClient.setBufferSize(2048); // Increase buffer size to 2048 to prevent drops
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
 
     lastControlTime = lastTelemetryTime = millis();
+    lastSteerMoveTime = lastTracMoveTime = millis();
 }
 
 // ---- Loop ----
@@ -368,8 +400,21 @@ void loop() {
         static unsigned long wt = 0;
         if (millis() - wt > 10000) { wt = millis(); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); }
     } else {
-        if (!mqttClient.connected()) reconnectMQTT();
-        mqttClient.loop();
+        if (!mqttClient.connected()) {
+            // Safety watchdog: stop motors if MQTT is disconnected!
+            setTraction(0);
+            setSteering(0);
+            targetSpeed = 0.0f;
+            targetAngle = 0;
+            isArrivalActive = false;
+            arrivalPhase = 0;
+            fuzzyTrac.reset();
+            fuzzySteer.reset();
+
+            reconnectMQTT();
+        } else {
+            mqttClient.loop();
+        }
     }
 
     unsigned long now = millis();
@@ -388,6 +433,34 @@ void loop() {
         float speedTrac = (float)(tTrac - lastEncTrac) / dt;
         lastEncTrac = tTrac;
 
+        // Stall detection for steering
+        if (fabsf(currentPwmSteer) > 80.0f) {
+            if (tSteer != lastSteerPosForStall) {
+                lastSteerPosForStall = tSteer;
+                lastSteerMoveTime = now;
+                steerStallError = false;
+            } else if (now - lastSteerMoveTime > 2000) {
+                steerStallError = true;
+            }
+        } else {
+            lastSteerMoveTime = now;
+            lastSteerPosForStall = tSteer;
+        }
+
+        // Stall detection for traction
+        if (fabsf(currentPwmTrac) > 80.0f) {
+            if (tTrac != lastTracPosForStall) {
+                lastTracPosForStall = tTrac;
+                lastTracMoveTime = now;
+                tracStallError = false;
+            } else if (now - lastTracMoveTime > 2000) {
+                tracStallError = true;
+            }
+        } else {
+            lastTracMoveTime = now;
+            lastTracPosForStall = tTrac;
+        }
+
         if (isArrivalActive) {
             // ==========================================
             // HIGH-PRECISION CLOSED-LOOP ARRIVAL SYSTEM
@@ -402,28 +475,23 @@ void loop() {
                 currentPwmSteer = fuzzySteer.compute((float)targetAngleTicks, (float)tSteer, dt);
                 setSteering((int)currentPwmSteer);
 
-                // Check stabilization: error within tolerance AND motor is nearly stationary
+                // Check stabilization
                 float errorSteer = (float)targetAngleTicks - (float)tSteer;
-                // d_error here is the true angular velocity (ticks/s) since the PD controller
-                // normalizes by dt internally — use lastState.d_error as raw velocity reference
-                float steerVel = fuzzySteer.lastState.d_error;
+                float d_errorSteer = fuzzySteer.lastState.d_error;
 
-                if (fabsf(errorSteer) <= steerTolerance && fabsf(steerVel) < steerVelTolerance) {
+                if (fabsf(errorSteer) <= steerTolerance && fabsf(d_errorSteer) < 15.0f) {
                     steeringStableCount++;
-                    if (steeringStableCount >= 4) { // 4 consecutive samples = 200ms stability
+                    if (steeringStableCount >= 3) { // Must be stable for 3 consecutive samples (150ms)
                         arrivalPhase = 2;
-                        setSteering(0); // hard-stop steering before switching
                         noInterrupts();
                         startTracPos = encTrac;
                         interrupts();
                         fuzzyTrac.reset(); // clear integrator for perfect translation start
                         steeringStableCount = 0;
-                        Serial.printf("Arrival Phase 1 OK → Steer error=%.1f ticks, vel=%.1f ticks/s\n",
-                                      errorSteer, steerVel);
-                        Serial.println("Starting Phase 2 (Translation).");
+                        Serial.println("Arrival: Phase 1 complete. Starting Phase 2 (Translation).");
                     }
                 } else {
-                    steeringStableCount = 0; // reset if any instability
+                    steeringStableCount = 0;
                 }
             }
             else if (arrivalPhase == 2) {
@@ -437,17 +505,12 @@ void loop() {
                 long remainingTicks = targetTracTicks - traveledTicks;
                 remainingDistCm = (float)remainingTicks / TICKS_PER_CM;
 
-                // Cascaded speed profiling: proportional ramp down as we approach target.
-                // Minimum speed 25 ticks/s to ensure motor always overcomes friction until very close.
+                // Cascaded speed profiling: slow down proportionally as we arrive
                 float speedTarget = arrivalKpTrac * (float)remainingTicks;
                 speedTarget = constrain(speedTarget, -maxArrivalSpeed, maxArrivalSpeed);
 
-                // Dead-band: below 12 ticks/s target (fine approach zone) step down gracefully
-                if (fabsf(speedTarget) < 12.0f && fabsf(speedTarget) > 0.0f) {
-                    speedTarget = (speedTarget > 0.0f) ? 12.0f : -12.0f;
-                }
-                // Hard stop zone — already within tolerance
-                if (abs(remainingTicks) <= (long)arrivalTolerance) {
+                // Simple dead-band to stop completely without oscillation
+                if (fabsf(speedTarget) < 5.0f) {
                     speedTarget = 0.0f;
                 }
 
@@ -472,8 +535,14 @@ void loop() {
             // ==========================================
             // NORMAL MANUAL TELEOPERATION SYSTEM
             // ==========================================
-            currentPwmTrac = fuzzyTrac.compute(targetSpeed, speedTrac, dt);
-            setTraction((int)currentPwmTrac);
+            if (targetSpeed == 0.0f) {
+                fuzzyTrac.reset();
+                currentPwmTrac = 0.0f;
+                setTraction(0);
+            } else {
+                currentPwmTrac = fuzzyTrac.compute(targetSpeed, speedTrac, dt);
+                setTraction((int)currentPwmTrac);
+            }
 
             currentPwmSteer = fuzzySteer.compute((float)targetAngle, (float)tSteer, dt);
             setSteering((int)currentPwmSteer);
@@ -493,12 +562,18 @@ void loop() {
         float spdSnap = (float)(posTrac - lastPosTelTrac) / (TELEMETRY_INTERVAL_MS / 1000.0f);
         lastPosTelTrac = posTrac;
 
+        // Convert steering ticks values to degrees for simple teleoperation reporting
+        float steerTargetDeg = (float)(isArrivalActive ? targetAngleTicks : targetAngle) * (360.0f / 826.0f);
+        float steerPosDeg = (float)posSteer * (360.0f / 826.0f);
+        float steerErrDeg = fuzzySteer.lastState.error * (360.0f / 826.0f);
+        float steerDerrDeg = fuzzySteer.lastState.d_error * (360.0f / 826.0f);
+
         char buf[1024];
         snprintf(buf, sizeof(buf),
             "{\"connected\":true,"
              "\"trac\":{\"target\":%.1f,\"speed\":%.1f,\"pos\":%ld,\"pwm\":%.1f,"
                         "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
-             "\"steer\":{\"target\":%ld,\"pos\":%ld,\"pwm\":%.1f,"
+             "\"steer\":{\"target\":%.1f,\"pos\":%.1f,\"pwm\":%.1f,"
                          "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
              "\"arrival\":{\"active\":%s,\"phase\":%d,\"target_dist\":%.1f,\"remaining_dist\":%.1f,\"target_angle\":%.1f},"
              "\"polarity\":{\"t_mot\":%d,\"t_enc\":%d,\"s_mot\":%d,\"s_enc\":%d},"
@@ -511,8 +586,8 @@ void loop() {
             targetSpeed, spdSnap, posTrac, currentPwmTrac,
             fuzzyTrac.lastState.error, fuzzyTrac.lastState.d_error, fuzzyTrac.lastState.delta_pwm,
 
-            targetAngle, posSteer, currentPwmSteer,
-            fuzzySteer.lastState.error, fuzzySteer.lastState.d_error, fuzzySteer.lastState.delta_pwm,
+            steerTargetDeg, steerPosDeg, currentPwmSteer,
+            steerErrDeg, steerDerrDeg, fuzzySteer.lastState.delta_pwm,
 
             isArrivalActive ? "true" : "false", arrivalPhase, targetDistanceCm, remainingDistCm, targetAngleDeg,
             tracMotorDir, tracEncDir, steerMotorDir, steerEncDir,

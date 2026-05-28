@@ -99,9 +99,9 @@ function setupCanvas() {
     });
 }
 
-function updateCarKinematics(tracPos, steerTicks) {
-    // Convert steering ticks to radians
-    steerAngleRad = (steerTicks / STEER_MAX_TICKS) * STEER_MAX_RAD;
+function updateCarKinematics(tracPos, steerDeg) {
+    // Convert steering degrees to radians
+    steerAngleRad = (steerDeg * Math.PI) / 180.0;
     steerAngleRad = Math.max(-STEER_MAX_RAD, Math.min(STEER_MAX_RAD, steerAngleRad));
 
     // Displacement since last frame (signed, in encoder ticks → scale to px)
@@ -699,7 +699,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // In manual mode, we just show a straight line representation
             const ticksPerCm = 25.0;
             const pxDist = (dist * ticksPerCm) * 0.08;
-            const radAngle = (angle / STEER_MAX_TICKS) * STEER_MAX_RAD;
+            const radAngle = (angle * Math.PI) / 180.0;
             const totalTheta = carTheta + radAngle;
             
             autopilotTargetX = carX + pxDist * Math.cos(totalTheta);

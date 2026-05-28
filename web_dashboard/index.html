@@ -116,10 +116,10 @@
 
                         <div class="slider-box">
                             <div class="slider-header">
-                                <span><i class="fa-solid fa-steering-wheel"></i> Ángulo de Dirección (ticks)</span>
+                                <span><i class="fa-solid fa-steering-wheel"></i> Ángulo de Dirección (Grados °)</span>
                                 <span id="val-target-angle" class="slider-val">0</span>
                             </div>
-                            <input type="range" id="slider-angle" min="-200" max="200" value="0" step="5">
+                            <input type="range" id="slider-angle" min="-360" max="360" value="0" step="5">
                             <div class="action-row" style="margin-top: 8px; display: flex; justify-content: flex-end;">
                                 <button id="send-angle-btn" class="btn btn-xs btn-primary"><i class="fa-solid fa-paper-plane"></i> Enviar Dirección</button>
                             </div>
@@ -132,10 +132,10 @@
                         <button class="btn btn-secondary preset-btn" data-speed="0" data-angle="0"><i class="fa-solid fa-circle-stop"></i> Detener / Centrar</button>
                         <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="0"><i class="fa-solid fa-angle-down"></i> Atrás Lento</button>
                         <button class="btn btn-secondary preset-btn" data-speed="-150" data-angle="0"><i class="fa-solid fa-angles-down"></i> Atrás Rápido</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-100"><i class="fa-solid fa-arrow-turn-up fa-rotate-270"></i> Curva Izquierda</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="100"><i class="fa-solid fa-arrow-turn-up fa-rotate-90"></i> Curva Derecha</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="-100"><i class="fa-solid fa-arrow-turn-down fa-rotate-90"></i> Atrás + Izquierda</button>
-                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="100"><i class="fa-solid fa-arrow-turn-down fa-rotate-270"></i> Atrás + Derecha</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="-45"><i class="fa-solid fa-arrow-turn-up fa-rotate-270"></i> Curva Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="80" data-angle="45"><i class="fa-solid fa-arrow-turn-up fa-rotate-90"></i> Curva Derecha</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="-45"><i class="fa-solid fa-arrow-turn-down fa-rotate-90"></i> Atrás + Izquierda</button>
+                        <button class="btn btn-secondary preset-btn" data-speed="-80" data-angle="45"><i class="fa-solid fa-arrow-turn-down fa-rotate-270"></i> Atrás + Derecha</button>
                     </div>
                 </section>
 
@@ -335,12 +335,12 @@
                             <div class="metric-row">
                                 <span class="metric-name">Ángulo Objetivo:</span>
                                 <span id="num-target-angle" class="metric-val text-blue">0</span>
-                                <span class="metric-unit">ticks</span>
+                                <span class="metric-unit">°</span>
                             </div>
                             <div class="metric-row">
                                 <span class="metric-name">Ángulo Actual:</span>
                                 <span id="num-pos-steer" class="metric-val text-green">0</span>
-                                <span class="metric-unit">ticks</span>
+                                <span class="metric-unit">°</span>
                             </div>
                             <div class="metric-row">
                                 <span class="metric-name">PWM Salida:</span>
@@ -350,7 +350,7 @@
                             <div class="metric-row">
                                 <span class="metric-name">Error:</span>
                                 <span id="num-err-steer" class="metric-val">0</span>
-                                <span class="metric-unit">ticks</span>
+                                <span class="metric-unit">°</span>
                             </div>
                         </div>
                     </div>
