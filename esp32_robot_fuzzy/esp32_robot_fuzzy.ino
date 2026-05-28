@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <esp_arduino_version.h>
+#include <Preferences.h>
 #include "PinDefinitions.h"
 #include "Config.h"
 #include "FuzzyController.h"
@@ -25,6 +26,7 @@ void writeLEDC(uint8_t pin, uint8_t ch, uint32_t duty) {
 // --- Global Objects ---
 WiFiClient   espClient;
 PubSubClient mqttClient(espClient);
+Preferences  prefs; // Preferences object for persistent hardware calibration
 
 // Traction: Fuzzy PI (velocity control, rear motor)
 // Steering: Fuzzy PD (position control, front motor)
@@ -42,6 +44,12 @@ volatile long encTrac  = 0;
 volatile long encSteer = 0;
 
 long lastEncTrac = 0;
+
+// --- Dynamic Hardware Calibration Polarities (NVS) ---
+volatile int tracMotorDir  = 1;
+volatile int tracEncDir    = 1;
+volatile int steerMotorDir = 1;
+volatile int steerEncDir   = 1;
 
 // --- Control Targets ---
 float targetSpeed  = 0.0f;  // ticks/sec for traction motor
@@ -81,16 +89,16 @@ int steeringStableCount        = 0;      // Consecutive loops the steering must 
 
 // ---- ISRs ----
 void IRAM_ATTR isrTrac() {
-    encTrac = encTrac + (TRAC_ENC_DIR * (digitalRead(PIN_ENC_TRAC_B) == HIGH ? 1 : -1));
+    encTrac = encTrac + (tracEncDir * (digitalRead(PIN_ENC_TRAC_B) == HIGH ? 1 : -1));
 }
 void IRAM_ATTR isrSteer() {
-    encSteer = encSteer + (STEER_ENC_DIR * (digitalRead(PIN_ENC_STEER_B) == HIGH ? 1 : -1));
+    encSteer = encSteer + (steerEncDir * (digitalRead(PIN_ENC_STEER_B) == HIGH ? 1 : -1));
 }
 
 // ---- Motor Write ----
 void setTraction(int pwm) {
-    // Apply physical motor polarity inversion
-    pwm = pwm * TRAC_MOTOR_DIR;
+    // Apply physical motor polarity inversion dynamically
+    pwm = pwm * tracMotorDir;
 
     if (pwm > 0) {
         digitalWrite(PIN_TRAC_IN1, HIGH); digitalWrite(PIN_TRAC_IN2, LOW);
@@ -109,8 +117,8 @@ void setSteering(int pwm) {
     interrupts();
     if ((pos >= STEER_MAX && pwm > 0) || (pos <= -STEER_MAX && pwm < 0)) pwm = 0;
 
-    // Apply physical motor polarity inversion
-    pwm = pwm * STEER_MOTOR_DIR;
+    // Apply physical motor polarity inversion dynamically
+    pwm = pwm * steerMotorDir;
 
     if (pwm > 0) {
         digitalWrite(PIN_STEER_IN1, HIGH); digitalWrite(PIN_STEER_IN2, LOW);
@@ -229,6 +237,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
         float ge = parseVal(p, "\"ge\""), gde = parseVal(p, "\"gde\""), gu = parseVal(p, "\"gu\"");
         if (p.indexOf("\"motor\":\"trac\"") != -1)  fuzzyTrac.setGains(ge, gde, gu);
         if (p.indexOf("\"motor\":\"steer\"") != -1) fuzzySteer.setGains(ge, gde, gu);
+    } else if (p.indexOf("\"polarity\"") != -1) {
+        int t_mot = (int)parseVal(p, "\"t_mot\"");
+        int t_enc = (int)parseVal(p, "\"t_enc\"");
+        int s_mot = (int)parseVal(p, "\"s_mot\"");
+        int s_enc = (int)parseVal(p, "\"s_enc\"");
+
+        if (t_mot == 1 || t_mot == -1)   tracMotorDir  = t_mot;
+        if (t_enc == 1 || t_enc == -1)   tracEncDir    = t_enc;
+        if (s_mot == 1 || s_mot == -1)   steerMotorDir = s_mot;
+        if (s_enc == 1 || s_enc == -1)   steerEncDir   = s_enc;
+
+        prefs.begin("polarity", false);
+        prefs.putInt("trac_mot", (int)tracMotorDir);
+        prefs.putInt("trac_enc", (int)tracEncDir);
+        prefs.putInt("steer_mot", (int)steerMotorDir);
+        prefs.putInt("steer_enc", (int)steerEncDir);
+        prefs.end();
+
+        Serial.printf("POLARIDAD ACTUALIZADA: TracMot=%d, TracEnc=%d, SteerMot=%d, SteerEnc=%d\n",
+                      tracMotorDir, tracEncDir, steerMotorDir, steerEncDir);
     } else if (p.indexOf("\"reset\"") != -1) {
         isArrivalActive = false;
         arrivalPhase = 0;
@@ -267,6 +295,20 @@ void reconnectMQTT() {
 // ---- Setup ----
 void setup() {
     Serial.begin(115200);
+
+    // Iniciar Preferences y cargar calibración de hardware guardada
+    prefs.begin("polarity", false);
+    tracMotorDir  = prefs.getInt("trac_mot", 1);
+    tracEncDir    = prefs.getInt("trac_enc", 1);
+    steerMotorDir = prefs.getInt("steer_mot", 1);
+    steerEncDir   = prefs.getInt("steer_enc", 1);
+    prefs.end();
+
+    // Validar integridad de las polaridades cargadas (solo 1 o -1)
+    if (tracMotorDir != 1 && tracMotorDir != -1)   tracMotorDir = 1;
+    if (tracEncDir != 1 && tracEncDir != -1)       tracEncDir = 1;
+    if (steerMotorDir != 1 && steerMotorDir != -1) steerMotorDir = 1;
+    if (steerEncDir != 1 && steerEncDir != -1)     steerEncDir = 1;
 
     pinMode(PIN_TRAC_IN1,  OUTPUT); pinMode(PIN_TRAC_IN2,  OUTPUT);
     pinMode(PIN_STEER_IN1, OUTPUT); pinMode(PIN_STEER_IN2, OUTPUT);
@@ -445,6 +487,7 @@ void loop() {
              "\"steer\":{\"target\":%ld,\"pos\":%ld,\"pwm\":%.1f,"
                          "\"err\":%.2f,\"derr\":%.2f,\"du\":%.2f},"
              "\"arrival\":{\"active\":%s,\"phase\":%d,\"target_dist\":%.1f,\"remaining_dist\":%.1f,\"target_angle\":%.1f},"
+             "\"polarity\":{\"t_mot\":%d,\"t_enc\":%d,\"s_mot\":%d,\"s_enc\":%d},"
              "\"fuzzy\":{"
                "\"trac_mu_e\":[%.2f,%.2f,%.2f,%.2f,%.2f],"
                "\"trac_mu_de\":[%.2f,%.2f,%.2f],"
@@ -458,6 +501,7 @@ void loop() {
             fuzzySteer.lastState.error, fuzzySteer.lastState.d_error, fuzzySteer.lastState.delta_pwm,
 
             isArrivalActive ? "true" : "false", arrivalPhase, targetDistanceCm, remainingDistCm, targetAngleDeg,
+            tracMotorDir, tracEncDir, steerMotorDir, steerEncDir,
 
             fuzzyTrac.lastState.mu_e[0],  fuzzyTrac.lastState.mu_e[1],
             fuzzyTrac.lastState.mu_e[2],  fuzzyTrac.lastState.mu_e[3],  fuzzyTrac.lastState.mu_e[4],

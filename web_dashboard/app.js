@@ -9,6 +9,7 @@ let commandTopic     = "";
 let lastPingTime     = null;
 let pingInterval     = null;
 let lastTelemetryData = null;
+let polaritySynced    = false;
 
 // Auto-Discovery
 let discoveryClient    = null;
@@ -323,6 +324,7 @@ function pushChart(targetSpeed, actualSpeed, targetAngle, actualAngle, tracErr, 
 // MQTT
 // ============================================================
 function connectMQTT() {
+    polaritySynced = false;
     macAddress = document.getElementById('mac-input').value
         .replace(/[^a-fA-F0-9]/g, '').toUpperCase();
     if (macAddress.length !== 12) {
@@ -372,6 +374,7 @@ function onConnectFailure(err) {
 
 function onConnectionLost(res) {
     isConnected = false;
+    polaritySynced = false;
     document.getElementById('conn-badge').className = "badge badge-disconnected";
     document.getElementById('conn-text').innerText  = "DESCONECTADO";
     const btn = document.getElementById('connect-btn');
@@ -446,6 +449,15 @@ function onMessageArrived(message) {
         // --- Precision Arrival (ESP32-Side) Feedback ---
         if (d.arrival) {
             updateArrivalFeedback(d.arrival);
+        }
+
+        // --- Dynamic Polarity (NVS) Calibration Sync ---
+        if (d.polarity && !polaritySynced) {
+            document.getElementById('cal-t-mot').checked = (d.polarity.t_mot === -1);
+            document.getElementById('cal-t-enc').checked = (d.polarity.t_enc === -1);
+            document.getElementById('cal-s-mot').checked = (d.polarity.s_mot === -1);
+            document.getElementById('cal-s-enc').checked = (d.polarity.s_enc === -1);
+            polaritySynced = true;
         }
 
     } catch(e) { console.error("Telemetry parse error:", e, message.payloadString); }
@@ -746,5 +758,22 @@ document.addEventListener("DOMContentLoaded", () => {
         publishCommand({ cmd: "tune", motor, ge, gde, gu });
         const label = motor === 'trac' ? 'Tracción' : 'Dirección';
         alert(`Parámetros enviados → Motor ${label}\nGe=${ge}  Gde=${gde}  Gu=${gu}`);
+    });
+
+    // Send Polarity Calibration Command
+    document.getElementById('send-polarity-btn').addEventListener('click', () => {
+        if (!isConnected) { alert("Conéctate primero al ESP32."); return; }
+        
+        const t_mot = document.getElementById('cal-t-mot').checked ? -1 : 1;
+        const t_enc = document.getElementById('cal-t-enc').checked ? -1 : 1;
+        const s_mot = document.getElementById('cal-s-mot').checked ? -1 : 1;
+        const s_enc = document.getElementById('cal-s-enc').checked ? -1 : 1;
+        
+        polaritySynced = false; // force re-sync on next telemetry
+        publishCommand({ cmd: "polarity", t_mot, t_enc, s_mot, s_enc });
+        alert(`Polaridad de hardware enviada al ESP32:\n\n` + 
+              `⚙️ Tracción → Motor: ${t_mot === -1 ? 'Invertido (-1)' : 'Normal (1)'}, Encoder: ${t_enc === -1 ? 'Invertido (-1)' : 'Normal (1)'}\n` +
+              `🔄 Dirección → Motor: ${s_mot === -1 ? 'Invertido (-1)' : 'Normal (1)'}, Encoder: ${s_enc === -1 ? 'Invertido (-1)' : 'Normal (1)'}\n\n` +
+              `Se aplicará en caliente y se guardará permanentemente en la memoria NVS.`);
     });
 });

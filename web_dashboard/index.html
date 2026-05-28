@@ -242,6 +242,61 @@
                     </div>
                 </section>
                 
+                <!-- HARDWARE CALIBRATION (POLARITY) -->
+                <section class="card calibration-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-wrench" style="color: var(--color-orange);"></i>
+                        <h2>Calibración y Polaridad de Motores (NVS)</h2>
+                    </div>
+                    <div class="calibration-body" style="display: flex; flex-direction: column; gap: 12px;">
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            Si las ruedas giran al revés o el lazo cerrado es inestable debido a la polaridad física, invierte los motores o encoders en tiempo real. Los cambios se guardan permanentemente en la memoria flash NVS del ESP32.
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <!-- Traction Calibration -->
+                            <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="font-size: 0.85rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; color: var(--color-blue);">⚙️ Tracción (Atrás)</h3>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                    <span>Invertir Motor</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="cal-t-mot">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; margin-top: 4px;">
+                                    <span>Invertir Encoder</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="cal-t-enc">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Steering Calibration -->
+                            <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="font-size: 0.85rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; color: var(--color-orange);">🔄 Dirección (Adelante)</h3>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                    <span>Invertir Motor</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="cal-s-mot">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; margin-top: 4px;">
+                                    <span>Invertir Encoder</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="cal-s-enc">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="send-polarity-btn" class="btn btn-primary" style="width: 100%; padding: 8px 12px; margin-top: 4px;"><i class="fa-solid fa-floppy-disk"></i> Guardar y Aplicar Polaridad</button>
+                    </div>
+                </section>
+                
                 <!-- TELEMETRY NUMERICAL VALUES -->
                 <section class="card telemetry-numeric-card">
                     <div class="card-header">
